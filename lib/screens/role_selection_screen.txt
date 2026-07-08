@@ -1,0 +1,94 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import '../auth/login_screen.dart';
+
+class RoleSelectionScreen extends StatefulWidget {
+  const RoleSelectionScreen({super.key});
+
+  @override
+  State<RoleSelectionScreen> createState() => _RoleSelectionScreenState();
+}
+
+class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
+  FlutterTts flutterTts = FlutterTts();
+  bool _isSpeaking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _playTutorial();
+  }
+
+  // Function to play the voice tutorial
+  void _playTutorial() async {
+    await flutterTts.speak(
+        "Welcome to the Ride Hailing app. Please select your role. Tap the blue button if you're a passenger. Tap the red button if you're a driver.");
+    setState(() {
+      _isSpeaking = true;
+    });
+  }
+
+  // Function to stop any ongoing TTS
+  void _stopSpeaking() async {
+    if (_isSpeaking) {
+      await flutterTts.stop();
+      setState(() {
+        _isSpeaking = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _stopSpeaking, // Stops speaking if the screen is tapped
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Select Role'),
+          backgroundColor: Colors.green,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  _stopSpeaking();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const LoginScreen(userRole: 'Passenger'),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue, // Passenger button color
+                ),
+                child: const Text('I am a Passenger'),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  _stopSpeaking();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const LoginScreen(userRole: 'Driver'),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red, // Driver button color
+                ),
+                child: const Text('I am a Driver'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

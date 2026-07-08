@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "1044579725862",
+    "project_id": "ridehome-187ca",
+    "storage_bucket": "ridehome-187ca.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1044579725862:android:3d2c46fbdd7f4e57b3ece7",
+        "android_client_info": {
+          "package_name": "com.example.ride"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1044579725862-87g50si55soj80nssuml1pvekr4lp758.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQ-VWn-YnmeU4aS7pbVy402j5ulQMuxGM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1044579725862-87g50si55soj80nssuml1pvekr4lp758.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1044579725862-t0l37vivo37vg5tmj8qpib2cjss29ee4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.taxiApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

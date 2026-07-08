@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>1044579725862-ivhjktcf02eq8h2r7r4jflpoej8ai5ei.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.1044579725862-ivhjktcf02eq8h2r7r4jflpoej8ai5ei</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCd10M-yxEI7quQPgdXrJ3XMd-GYSNbwKc</string>
+	<key>GCM_SENDER_ID</key>
+	<string>1044579725862</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.ride</string>
+	<key>PROJECT_ID</key>
+	<string>ridehome-187ca</string>
+	<key>STORAGE_BUCKET</key>
+	<string>ridehome-187ca.appspot.com</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:1044579725862:ios:09c820fcb4fea82bb3ece7</string>
+</dict>
+</plist>

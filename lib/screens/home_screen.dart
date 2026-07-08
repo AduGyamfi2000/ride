@@ -1,0 +1,302 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:provider/provider.dart';
+import '../providers/ride_provider.dart';
+import '../providers/settings_provider.dart';
+import 'setting_screen.dart';
+import 'vehicle_selection_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  HomeScreenState createState() => HomeScreenState();
+}
+
+class HomeScreenState extends State<HomeScreen> {
+  int _currentIndex = 0;
+  FlutterTts flutterTts = FlutterTts();
+  bool _isSpeaking = false;
+  bool _isOngoingExpanded = false;
+  bool _isHistoryExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _introduceTabs(); // Automatically play the introduction on Home tab load
+  }
+
+  // Stop speaking if TTS is ongoing
+  void _stopSpeaking() async {
+    if (_isSpeaking) {
+      await flutterTts.stop();
+      setState(() {
+        _isSpeaking = false;
+      });
+    }
+  }
+
+  // Introduce the tabs on Home screen load
+  void _introduceTabs() async {
+    _stopSpeaking(); // Stop any ongoing TTS
+    await flutterTts.speak(
+        "You are now on the Home tab. The blue tab at the bottom leads to Order Ride where you can select a vehicle. The red tab leads to Settings where you can change the language. Below, you can view your ongoing rides. Tap to explore.");
+    setState(() {
+      _isSpeaking = true;
+    });
+  }
+
+  // Speak the name of the selected tab
+  void _speakTab(String tabName) async {
+    _stopSpeaking(); // Stop any ongoing TTS
+    await flutterTts.speak("You're now in the $tabName.");
+    setState(() {
+      _isSpeaking = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rideProvider = Provider.of<RideProvider>(context);
+    final settingsProvider = Provider.of<SettingsProvider>(context);
+
+    return GestureDetector(
+      onTap: _stopSpeaking,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Smart Rural Ride'),
+          backgroundColor: Colors.green,
+        ),
+        body: _currentIndex == 0
+            ? _buildHomeTab(rideProvider, settingsProvider)
+            : _buildSettingsTab(),
+        bottomNavigationBar: BottomNavigationBar(
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home, color: Colors.green),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.car_rental, color: Colors.blue),
+              label: 'Order Ride',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings, color: Colors.red),
+              label: 'Settings',
+            ),
+          ],
+          currentIndex: _currentIndex,
+          selectedItemColor: Colors.black,
+          unselectedItemColor: Colors.grey,
+          backgroundColor: Colors.grey[200],
+          onTap: (index) {
+            setState(() {
+              if (index == 1) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const VehicleSelectionScreen()),
+                );
+              } else {
+                _currentIndex = index;
+                if (index == 0) {
+                  _introduceTabs();
+                } else if (index == 2) {
+                  _speakTab('Settings');
+                }
+              }
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  // Build the Home tab content
+  Widget _buildHomeTab(
+      RideProvider rideProvider, SettingsProvider settingsProvider) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ListView(
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Welcome to Smart Rural Ride',
+                    style: TextStyle(
+                      fontSize: settingsProvider.settings.textSize + 2,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Book a ride quickly, track it live, and keep your journey simple with voice help.',
+                    style: TextStyle(fontSize: settingsProvider.settings.textSize),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Selected Language: ${settingsProvider.settings.language}',
+            style: TextStyle(fontSize: settingsProvider.settings.textSize),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Ongoing Rides',
+            style: TextStyle(
+                fontSize: settingsProvider.settings.textSize,
+                fontWeight: FontWeight.bold),
+          ),
+          SwitchListTile(
+            title: Text(
+              "View Ongoing Rides",
+              style: TextStyle(
+                  color: Colors.orange,
+                  fontSize: settingsProvider.settings.textSize),
+            ),
+            subtitle: Text(
+              "Tap to view rides that are in progress.",
+              style: TextStyle(
+                  color: Colors.orange,
+                  fontSize: settingsProvider.settings.textSize),
+            ),
+            value: _isOngoingExpanded,
+            onChanged: (value) {
+              setState(() {
+                _isOngoingExpanded = value;
+              });
+            },
+          ),
+          if (_isOngoingExpanded && rideProvider.ongoingRide != null) ...[
+            ListTile(
+              title: Text(
+                  "${rideProvider.ongoingRide!.vehicleName} - ${rideProvider.ongoingRide!.location}",
+                  style:
+                      TextStyle(fontSize: settingsProvider.settings.textSize)),
+              subtitle: Text(
+                  "Time: ${rideProvider.ongoingRide!.rideTime ?? 'Now'}",
+                  style:
+                      TextStyle(fontSize: settingsProvider.settings.textSize)),
+              trailing: IconButton(
+                icon: const Icon(Icons.cancel, color: Colors.red),
+                onPressed: () => _showCancelConfirmationDialog(rideProvider),
+              ),
+            ),
+          ] else if (_isOngoingExpanded) ...[
+            const Center(
+              child: Text("No ongoing rides."),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Text(
+            'Ride History',
+            style: TextStyle(
+                fontSize: settingsProvider.settings.textSize,
+                fontWeight: FontWeight.bold),
+          ),
+          SwitchListTile(
+            title: Text(
+              "View Ride History",
+              style: TextStyle(
+                  color: Colors.blue,
+                  fontSize: settingsProvider.settings.textSize),
+            ),
+            subtitle: Text(
+              "Tap to view your past rides.",
+              style: TextStyle(
+                  color: Colors.blue,
+                  fontSize: settingsProvider.settings.textSize),
+            ),
+            value: _isHistoryExpanded,
+            onChanged: (value) {
+              setState(() {
+                _isHistoryExpanded = value;
+              });
+            },
+          ),
+          if (_isHistoryExpanded && rideProvider.rideHistory.isNotEmpty) ...[
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: rideProvider.rideHistory.length,
+              itemBuilder: (context, index) {
+                final ride = rideProvider.rideHistory[index];
+                return Dismissible(
+                  key: Key(ride.vehicleName),
+                  background: Container(color: Colors.red),
+                  onDismissed: (direction) {
+                    rideProvider.deleteRideFromHistory(index);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ride deleted.')),
+                    );
+                  },
+                  child: ListTile(
+                    title: Text("${ride.vehicleName} - ${ride.location}",
+                        style: TextStyle(fontSize: settingsProvider.settings.textSize)),
+                    subtitle: Text(
+                        "Time: ${ride.rideTime?.toString() ?? 'Now'}",
+                        style: TextStyle(fontSize: settingsProvider.settings.textSize)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => rideProvider.deleteRideFromHistory(index),
+                    ),
+                  ),
+                );
+              },
+            ),
+            ElevatedButton(
+              onPressed: rideProvider.resetHistory,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text('Reset Ride History'),
+            ),
+          ] else if (_isHistoryExpanded) ...[
+            const Center(
+              child: Text("No ride history available."),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showCancelConfirmationDialog(RideProvider rideProvider) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cancel Ride'),
+          content:
+              const Text('Are you sure you want to cancel the ongoing ride?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context)
+                    .pop(); // Close the dialog without canceling
+              },
+              child: const Text('No'),
+            ),
+            TextButton(
+              onPressed: () {
+                rideProvider.cancelOngoingRide(); // Confirm cancellation
+                Navigator.of(context).pop(); // Close the dialog
+              },
+              child: const Text('Yes'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Build the Settings tab content
+  Widget _buildSettingsTab() {
+    return const SettingsScreen(); // Return the settings screen
+  }
+}
