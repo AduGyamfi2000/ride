@@ -11,10 +11,11 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _roleDetailController = TextEditingController();
   final FlutterTts flutterTts = FlutterTts();
   String? _selectedRole;
   String? errorMessage;
@@ -24,6 +25,7 @@ class _SignupScreenState extends State<SignupScreen> {
     _phoneController.dispose();
     _nameController.dispose();
     _emailController.dispose();
+    _roleDetailController.dispose();
     flutterTts.stop();
     super.dispose();
   }
@@ -62,6 +64,16 @@ class _SignupScreenState extends State<SignupScreen> {
                 labelText: "Email (optional)",
               ),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _roleDetailController,
+              keyboardType: TextInputType.text,
+              decoration: InputDecoration(
+                labelText: _selectedRole == 'Driver'
+                    ? 'Vehicle / Service Type (optional)'
+                    : 'Travel preference (optional)',
+              ),
+            ),
             const SizedBox(height: 20),
             DropdownButtonFormField<String>(
               hint: const Text('Select Role'),
@@ -82,15 +94,22 @@ class _SignupScreenState extends State<SignupScreen> {
             const SizedBox(height: 30),
             ElevatedButton(
               onPressed: () async {
-                // Navigate to PhoneOTPVerification with phone number and role
+                if (_phoneController.text.trim().isEmpty || _nameController.text.trim().isEmpty || _selectedRole == null) {
+                  setState(() {
+                    errorMessage = 'Please provide your phone number, full name, and role.';
+                  });
+                  return;
+                }
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => PhoneOTPVerification(
-                          phoneNumber: _phoneController.text,
+                          phoneNumber: _phoneController.text.trim(),
                           userRole: _selectedRole ?? '',
-                          name: _nameController.text.isNotEmpty ? _nameController.text : null,
-                          email: _emailController.text.isNotEmpty ? _emailController.text : null,
+                          name: _nameController.text.trim(),
+                          email: _emailController.text.isNotEmpty ? _emailController.text.trim() : null,
+                          roleDetail: _roleDetailController.text.trim().isNotEmpty ? _roleDetailController.text.trim() : null,
                         ),
                   ),
                 );

@@ -17,11 +17,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      _emailController.text = user.email ?? '';
-      // Load name from Firestore? optional later
-    }
+    _loadProfile();
   }
 
   @override
@@ -31,14 +27,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  Future<void> _loadProfile() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final snapshot = await UserService.getUser(uid: user.uid);
+      if (!mounted) return;
+      setState(() {
+        _nameController.text = snapshot?['name']?.toString() ?? '';
+        _emailController.text = snapshot?['email']?.toString() ?? '';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to load profile right now.')),
+      );
+    }
+  }
+
   Future<void> _save() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    setState(() => _loading = true);
-    await UserService.updateUser(uid: user.uid, name: _nameController.text.isNotEmpty ? _nameController.text : null, email: _emailController.text.isNotEmpty ? _emailController.text : null);
-    setState(() => _loading = false);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated')));
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please sign in first.')));
+        return;
+      }
+      setState(() => _loading = true);
+      await UserService.updateUser(
+        uid: user.uid,
+        name: _nameController.text.trim().isNotEmpty ? _nameController.text.trim() : null,
+        email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to save profile.')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override

@@ -14,7 +14,8 @@ class LoginScreen extends StatefulWidget {
 
 class LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+  String? _selectedRole;
 
   // Define the admin phone number
   final String adminPhoneNumber =
@@ -33,13 +34,21 @@ class LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Proceed with OTP verification for regular users
+    if (_selectedRole == null && widget.userRole.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your role first.')),
+      );
+      return;
+    }
+
+    final role = _selectedRole ?? widget.userRole;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PhoneOTPVerification(
           phoneNumber: phoneNumber,
-          userRole: widget.userRole.isNotEmpty ? widget.userRole : '',
+          userRole: role,
         ),
       ),
     );
@@ -53,6 +62,23 @@ class LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            const Text('Select your role', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedRole ?? (widget.userRole.isNotEmpty ? widget.userRole : null),
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              hint: const Text('Choose role'),
+              onChanged: (String? value) {
+                setState(() {
+                  _selectedRole = value;
+                });
+              },
+              items: const [
+                DropdownMenuItem(value: 'Passenger', child: Text('Passenger')),
+                DropdownMenuItem(value: 'Driver', child: Text('Driver')),
+              ],
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: _phoneController,
               decoration: const InputDecoration(

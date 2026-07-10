@@ -5,15 +5,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isSignedIn() && request.auth.token.phone_number == '+233123456789';
-    }
-
     match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || request.auth.token.email == 'admin@ride.app');
       allow create: if isSignedIn() && request.auth.uid == userId;
-      allow read: if isSignedIn() && (isAdmin() || request.auth.uid == userId);
-      allow update: if isSignedIn() && (isAdmin() || request.auth.uid == userId);
-      allow delete: if isAdmin();
+      allow update: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isSignedIn() && request.auth.token.email == 'admin@ride.app';
     }
 
     match /rideRequests/{rideId} {

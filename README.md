@@ -14,7 +14,13 @@ A new Flutter project.
 
 3. Hive and offline
 	- Hive is used to store rides when offline. Hive is initialized in `main.dart` via `OfflineRideStore.init()`.
-	- `SyncService` uploads stored rides to Firestore when connectivity is restored.
+	- `SyncService` uploads stored rides to Firestore when connectivity is restored and also on app start if a network connection is already available.
+
+4. Profile and ride sync
+	- The profile screen loads the current user's name and email from Firestore and saves updates back to the `users` collection.
+	- Pending rides are saved locally in Hive and later uploaded to the `rideRequests` collection once the device reconnects.
+
+5. Running
 
 4. Running
 ```bash

@@ -43,7 +43,7 @@ class VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
           children: <Widget>[
             _vehicleOption('Tricycle', 'assets/images/pragya.png'),
             _vehicleOption('Taxi', 'assets/images/taxi.png'),
-            _vehicleOption('Bus', 'assets/images/aboboyaa.png'),
+            _vehicleOption('Aboboyaa', 'assets/images/aboboyaa.png'),
             _vehicleOption('Motorcycle', 'assets/images/motorcycle.png'),
           ],
         ),

@@ -10,7 +10,13 @@ class SyncService {
   void start() {
     _sub ??= _connectivity.onConnectivityChanged.listen((result) {
       if (result != ConnectivityResult.none) {
-        _uploadPendingRides();
+        uploadPendingRides();
+      }
+    });
+
+    _connectivity.checkConnectivity().then((result) {
+      if (result != ConnectivityResult.none) {
+        uploadPendingRides();
       }
     });
   }
@@ -20,7 +26,7 @@ class SyncService {
     _sub = null;
   }
 
-  Future<void> _uploadPendingRides() async {
+  Future<void> uploadPendingRides() async {
     final store = OfflineRideStore();
     final rides = await store.loadRides();
     if (rides.isEmpty) return;
