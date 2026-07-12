@@ -10,22 +10,10 @@ class RideProvider extends ChangeNotifier {
 
   List<Ride> ongoingRides = [];
 
-  void addRide(String vehicleName, String location, String? rideTime) {
-    _ongoingRide = Ride(
-        vehicleName: vehicleName,
-        location: location,
-        rideTime: rideTime); // Update ongoingRide
+  // Set the ongoing ride from a fully-built Ride (keeps id/uid/status intact)
+  void setOngoingRide(Ride ride) {
+    _ongoingRide = ride;
     notifyListeners();
-  }
-
-  // Method to add a new ongoing ride
-  void addOngoingRide(String vehicleName, String location, DateTime rideTime) {
-    _ongoingRide = Ride(
-      vehicleName: vehicleName,
-      location: location,
-      rideTime: rideTime.toString(),
-    );
-    notifyListeners(); // Notify listeners to update the UI
   }
 
   // Method to move a completed ride to history

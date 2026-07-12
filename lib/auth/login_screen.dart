@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../screens/admin_screen.dart';
 import '../screens/otp_screen.dart';
+import 'signup_screen.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_button.dart';
+import '../widgets/textfield.dart';
 
 class LoginScreen extends StatefulWidget {
   final String userRole;
@@ -14,8 +16,6 @@ class LoginScreen extends StatefulWidget {
 
 class LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
-  FirebaseAuth get _auth => FirebaseAuth.instance;
-  String? _selectedRole;
 
   // Define the admin phone number
   final String adminPhoneNumber =
@@ -24,31 +24,19 @@ class LoginScreenState extends State<LoginScreen> {
   void _sendOTP() {
     String phoneNumber = _phoneController.text.trim();
 
-    // Check if the entered phone number is the admin's
-    if (phoneNumber == adminPhoneNumber) {
-      // Navigate directly to the Admin Screen
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const AdminScreen()),
-      );
-      return;
-    }
-
-    if (_selectedRole == null && widget.userRole.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your role first.')),
-      );
-      return;
-    }
-
-    final role = _selectedRole ?? widget.userRole;
+    // The admin number now goes through the same real Firebase phone-auth
+    // OTP flow as everyone else — it just gets tagged with the 'Admin'
+    // role. Previously this skipped Firebase Auth entirely, which meant
+    // request.auth was null and the admin dashboard's own Firestore
+    // security rules would reject every read.
+    final isAdminNumber = phoneNumber == adminPhoneNumber;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PhoneOTPVerification(
           phoneNumber: phoneNumber,
-          userRole: role,
+          userRole: isAdminNumber ? 'Admin' : (widget.userRole.isNotEmpty ? widget.userRole : ''),
         ),
       ),
     );
@@ -59,37 +47,44 @@ class LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Login')),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('Select your role', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Welcome back', style: AppTextStyles.displayLarge),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _selectedRole ?? (widget.userRole.isNotEmpty ? widget.userRole : null),
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              hint: const Text('Choose role'),
-              onChanged: (String? value) {
-                setState(() {
-                  _selectedRole = value;
-                });
-              },
-              items: const [
-                DropdownMenuItem(value: 'Passenger', child: Text('Passenger')),
-                DropdownMenuItem(value: 'Driver', child: Text('Driver')),
-              ],
+            const Text(
+              'Enter your phone number to continue',
+              style: AppTextStyles.bodyMedium,
             ),
-            const SizedBox(height: 16),
-            TextField(
+            const SizedBox(height: 32),
+            CustomTextField(
               controller: _phoneController,
-              decoration: const InputDecoration(
-                labelText: 'Phone Number',
-              ),
+              label: 'Phone Number',
+              hint: 'e.g. +233241234567',
               keyboardType: TextInputType.phone,
+              prefixIcon: Icons.phone,
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
+            const SizedBox(height: 24),
+            AppButton(
+              label: 'Send OTP',
+              icon: Icons.arrow_forward,
               onPressed: _sendOTP,
-              child: const Text('Send OTP'),
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SignupScreen(initialRole: widget.userRole.isNotEmpty ? widget.userRole : null),
+                    ),
+                  );
+                },
+                child: const Text("Don't have an account? Sign up"),
+              ),
             ),
           ],
         ),

@@ -1,29 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ride/auth/login_screen.dart';
-import 'package:ride/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ride/screens/auth_gate_screen.dart';
+import 'package:ride/screens/onboarding_screen.dart';
 
 void main() {
-  testWidgets('shows the onboarding experience', (WidgetTester tester) async {
-    await tester.pumpWidget(const MyApp(hasSeenOnboarding: false));
+  testWidgets('AuthGateScreen shows onboarding on first launch',
+      (WidgetTester tester) async {
+    // No 'hasSeenOnboarding' flag set yet -> first-launch experience.
+    SharedPreferences.setMockInitialValues({});
 
-    expect(find.text('Smart Rural Ride'), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
-  });
+    await tester.pumpWidget(
+      const MaterialApp(home: AuthGateScreen()),
+    );
 
-  testWidgets('login screen asks for role and phone number', (WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+    // Let the async SharedPreferences lookup inside AuthGateScreen resolve.
+    await tester.pumpAndSettle();
 
-    expect(find.text('Select your role'), findsOneWidget);
-    expect(find.text('Phone Number'), findsOneWidget);
-    expect(find.text('Send OTP'), findsOneWidget);
-  });
-
-  testWidgets('auth gate offers sign up and login options', (WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(home: AuthGateScreen()));
-
-    expect(find.text('Create account'), findsOneWidget);
-    expect(find.text('Login'), findsOneWidget);
+    expect(find.byType(OnboardingScreen), findsOneWidget);
   });
 }

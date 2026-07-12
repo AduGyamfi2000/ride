@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:provider/provider.dart';
 import '../models/ride_model.dart';
 import '../providers/ride_provider.dart';
@@ -40,49 +42,78 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
     await flutterTts.speak(rideDetails);
   }
 
-  // Function to confirm the ride and save the details in both Firestore and the RideProvider
+  // Function to confirm the ride: saves offline-first, then pushes to
+  // Firestore immediately only if we're online. This avoids the ride being
+  // written twice (once here, once again by SyncService when connectivity
+  // returns).
   void _confirmRide() async {
     // Convert DateTime? to String
     String? rideTimeString = widget.rideTime?.toString();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    // A Firestore doc() call generates a unique id locally without writing
+    // anything, so we can use it as our single source of truth for this
+    // ride across Hive and Firestore.
+    final rideId = FirebaseFirestore.instance.collection('rideRequests').doc().id;
 
     final ride = Ride(
+      id: rideId,
+      uid: uid,
       vehicleName: widget.vehicleName,
       location: widget.location,
       rideTime: rideTimeString,
       pickupAddress: widget.location,
       dropoffAddress: widget.location,
+      status: 'Confirmed',
     );
 
-    Provider.of<RideProvider>(context, listen: false).addRide(
-      widget.vehicleName,
-      widget.location,
-      rideTimeString,
-    );
+    Provider.of<RideProvider>(context, listen: false).setOngoingRide(ride);
 
-    await OfflineRideStore().saveRide(ride);
+    final connectivityResult = await Connectivity().checkConnectivity();
+    final isOnline = connectivityResult != ConnectivityResult.none;
 
-    // Save ride details to Firestore
+    if (!isOnline) {
+      // No connection: queue it for SyncService to upload later. Do NOT
+      // also write to Firestore here.
+      await OfflineRideStore().saveRide(ride);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You're offline — the ride is saved and will sync automatically once you're back online."),
+        ),
+      );
+      Navigator.popUntil(context, (route) => route.isFirst);
+      return;
+    }
+
+    // Online: write straight to Firestore using the same id (set is
+    // idempotent, so even a retry can't create a duplicate document).
     try {
-      await FirebaseFirestore.instance.collection('rideRequests').add({
+      await FirebaseFirestore.instance.collection('rideRequests').doc(rideId).set({
+        'id': rideId,
+        'uid': uid,
         'vehicleName': widget.vehicleName,
         'location': widget.location,
         'rideTime': rideTimeString ?? 'Now',
-        'passengerName': 'Passenger',
+        'passengerName': FirebaseAuth.instance.currentUser?.displayName ?? 'Passenger',
         'status': 'Confirmed',
-        'createdAt': Timestamp.now(),
+        'createdAt': Timestamp.fromDate(ride.createdAt),
         'time': rideTimeString ?? 'Now',
       });
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ride has been scheduled and saved.')),
       );
 
-      // Navigate back to the home screen
       Navigator.popUntil(context, (route) => route.isFirst);
     } catch (e) {
-      // Handle errors in saving to Firestore
+      // Firestore write failed even though we appeared online — fall back
+      // to the offline queue so the ride isn't lost.
+      await OfflineRideStore().saveRide(ride);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving ride: $e')),
+        SnackBar(content: Text('Could not reach the server, ride saved for later sync: $e')),
       );
     }
   }

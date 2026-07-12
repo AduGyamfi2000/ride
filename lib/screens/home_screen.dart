@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../providers/ride_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/offline_sync_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_button.dart';
+import '../widgets/offline_banner.dart';
+import '../widgets/ride_status_badge.dart';
+import '../widgets/section_header.dart';
 import 'setting_screen.dart';
 import 'vehicle_selection_screen.dart';
 
@@ -19,11 +26,24 @@ class HomeScreenState extends State<HomeScreen> {
   bool _isSpeaking = false;
   bool _isOngoingExpanded = false;
   bool _isHistoryExpanded = false;
+  bool _isOffline = false;
+  int _pendingRideCount = 0;
 
   @override
   void initState() {
     super.initState();
     _introduceTabs(); // Automatically play the introduction on Home tab load
+    _checkConnectivity();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final result = await Connectivity().checkConnectivity();
+    final pending = await OfflineRideStore().pendingCount();
+    if (!mounted) return;
+    setState(() {
+      _isOffline = result == ConnectivityResult.none;
+      _pendingRideCount = pending;
+    });
   }
 
   // Stop speaking if TTS is ongoing
@@ -65,41 +85,45 @@ class HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Smart Rural Ride'),
-          backgroundColor: Colors.green,
         ),
-        body: _currentIndex == 0
-            ? _buildHomeTab(rideProvider, settingsProvider)
-            : _buildSettingsTab(),
+        body: Column(
+          children: [
+            if (_isOffline) OfflineBanner(pendingCount: _pendingRideCount),
+            Expanded(
+              child: _currentIndex == 0
+                  ? _buildHomeTab(rideProvider, settingsProvider)
+                  : _buildSettingsTab(),
+            ),
+          ],
+        ),
         bottomNavigationBar: BottomNavigationBar(
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.home, color: Colors.green),
+              icon: Icon(Icons.home),
               label: 'Home',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.car_rental, color: Colors.blue),
+              icon: Icon(Icons.car_rental),
               label: 'Order Ride',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.settings, color: Colors.red),
+              icon: Icon(Icons.settings),
               label: 'Settings',
             ),
           ],
           currentIndex: _currentIndex,
-          selectedItemColor: Colors.black,
-          unselectedItemColor: Colors.grey,
-          backgroundColor: Colors.grey[200],
           onTap: (index) {
             setState(() {
               if (index == 1) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const VehicleSelectionScreen()),
-                );
+                ).then((_) => _checkConnectivity());
               } else {
                 _currentIndex = index;
                 if (index == 0) {
                   _introduceTabs();
+                  _checkConnectivity();
                 } else if (index == 2) {
                   _speakTab('Settings');
                 }
@@ -129,12 +153,15 @@ class HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(
                       fontSize: settingsProvider.settings.textSize + 2,
                       fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Book a ride quickly, track it live, and keep your journey simple with voice help.',
-                    style: TextStyle(fontSize: settingsProvider.settings.textSize),
+                    style: TextStyle(
+                        fontSize: settingsProvider.settings.textSize,
+                        color: AppColors.textSecondary),
                   ),
                 ],
               ),
@@ -146,23 +173,19 @@ class HomeScreenState extends State<HomeScreen> {
             style: TextStyle(fontSize: settingsProvider.settings.textSize),
           ),
           const SizedBox(height: 20),
-          Text(
-            'Ongoing Rides',
-            style: TextStyle(
-                fontSize: settingsProvider.settings.textSize,
-                fontWeight: FontWeight.bold),
-          ),
+          const SectionHeader(title: 'Ongoing Rides'),
           SwitchListTile(
+            activeThumbColor: AppColors.primary,
             title: Text(
               "View Ongoing Rides",
               style: TextStyle(
-                  color: Colors.orange,
+                  color: AppColors.textPrimary,
                   fontSize: settingsProvider.settings.textSize),
             ),
             subtitle: Text(
               "Tap to view rides that are in progress.",
               style: TextStyle(
-                  color: Colors.orange,
+                  color: AppColors.textSecondary,
                   fontSize: settingsProvider.settings.textSize),
             ),
             value: _isOngoingExpanded,
@@ -182,34 +205,31 @@ class HomeScreenState extends State<HomeScreen> {
                   "Time: ${rideProvider.ongoingRide!.rideTime ?? 'Now'}",
                   style:
                       TextStyle(fontSize: settingsProvider.settings.textSize)),
+              leading: RideStatusBadge(status: rideProvider.ongoingRide!.status),
               trailing: IconButton(
-                icon: const Icon(Icons.cancel, color: Colors.red),
+                icon: const Icon(Icons.cancel, color: AppColors.error),
                 onPressed: () => _showCancelConfirmationDialog(rideProvider),
               ),
             ),
           ] else if (_isOngoingExpanded) ...[
             const Center(
-              child: Text("No ongoing rides."),
+              child: Text("No ongoing rides.", style: TextStyle(color: AppColors.textHint)),
             ),
           ],
           const SizedBox(height: 20),
-          Text(
-            'Ride History',
-            style: TextStyle(
-                fontSize: settingsProvider.settings.textSize,
-                fontWeight: FontWeight.bold),
-          ),
+          const SectionHeader(title: 'Ride History'),
           SwitchListTile(
+            activeThumbColor: AppColors.info,
             title: Text(
               "View Ride History",
               style: TextStyle(
-                  color: Colors.blue,
+                  color: AppColors.textPrimary,
                   fontSize: settingsProvider.settings.textSize),
             ),
             subtitle: Text(
               "Tap to view your past rides.",
               style: TextStyle(
-                  color: Colors.blue,
+                  color: AppColors.textSecondary,
                   fontSize: settingsProvider.settings.textSize),
             ),
             value: _isHistoryExpanded,
@@ -227,8 +247,8 @@ class HomeScreenState extends State<HomeScreen> {
               itemBuilder: (context, index) {
                 final ride = rideProvider.rideHistory[index];
                 return Dismissible(
-                  key: Key(ride.vehicleName),
-                  background: Container(color: Colors.red),
+                  key: Key(ride.id ?? '${ride.vehicleName}-$index'),
+                  background: Container(color: AppColors.error),
                   onDismissed: (direction) {
                     rideProvider.deleteRideFromHistory(index);
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -241,20 +261,21 @@ class HomeScreenState extends State<HomeScreen> {
                     subtitle: Text(
                         "Time: ${ride.rideTime?.toString() ?? 'Now'}",
                         style: TextStyle(fontSize: settingsProvider.settings.textSize)),
+                    leading: RideStatusBadge(status: ride.status),
                     trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
+                      icon: const Icon(Icons.delete, color: AppColors.error),
                       onPressed: () => rideProvider.deleteRideFromHistory(index),
                     ),
                   ),
                 );
               },
             ),
-            ElevatedButton(
+            const SizedBox(height: 12),
+            AppButton(
+              label: 'Reset Ride History',
               onPressed: rideProvider.resetHistory,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text('Reset Ride History'),
+              variant: AppButtonVariant.danger,
+              isLarge: false,
             ),
           ] else if (_isHistoryExpanded) ...[
             const Center(

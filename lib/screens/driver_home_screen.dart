@@ -14,6 +14,10 @@ class DriverHomeScreen extends StatefulWidget {
 class _DriverHomeScreenState extends State<DriverHomeScreen> {
   FlutterTts flutterTts = FlutterTts();
   bool _isSpeaking = false;
+  // Only announce rides created after this screen opened, so re-opening
+  // the screen (or any unrelated Firestore change) doesn't replay every
+  // historical ride request through TTS.
+  final DateTime _listenerStartTime = DateTime.now();
 
   @override
   void initState() {
@@ -36,11 +40,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   void _listenForRideOrders() {
     FirebaseFirestore.instance
         .collection('rideRequests')
+        .where('createdAt', isGreaterThan: Timestamp.fromDate(_listenerStartTime))
         .snapshots()
         .listen((snapshot) {
-      for (var doc in snapshot.docs) {
-        var rideData = doc.data();
-        _notifyDriver(rideData); // Notify driver with TTS
+      for (var change in snapshot.docChanges) {
+        // Only announce documents that were just added — otherwise every
+        // unrelated Firestore change re-reads and re-speaks the whole
+        // result set.
+        if (change.type == DocumentChangeType.added) {
+          var rideData = change.doc.data();
+          if (rideData != null) {
+            _notifyDriver(rideData); // Notify driver with TTS
+          }
+        }
       }
     });
   }

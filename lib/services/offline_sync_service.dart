@@ -34,4 +34,10 @@ class OfflineRideStore {
   Future<void> clear() async {
     await _box.delete('rides');
   }
+
+  /// Number of rides currently queued locally, waiting for SyncService to
+  /// upload them. Used to power OfflineBanner's "N request(s) saved" text.
+  Future<int> pendingCount() async {
+    return (await loadRides()).length;
+  }
 }

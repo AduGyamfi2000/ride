@@ -47,5 +47,11 @@
 	<true/>
     <key>GMSApiKey</key>
     <string>AIzaSyCb29QieeoHzxFuMnYfYHZXGb220Zto354</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>RuralRide needs your location to find nearby drivers and calculate accurate pickup points.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>RuralRide needs your location to find nearby drivers and calculate accurate pickup points.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>RuralRide needs access to your photos so drivers can upload a photo of their license and car.</string>
 </dict>
 </plist>

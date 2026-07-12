@@ -1,60 +1,39 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../models/user_profile_model.dart';
 
 class UserService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  static Map<String, dynamic> buildUserUpdateData({
-    String? name,
-    String? email,
-  }) {
-    final data = <String, dynamic>{};
-    if (name != null && name.isNotEmpty) data['name'] = name;
-    if (email != null && email.isNotEmpty) data['email'] = email;
-    return data;
+  static String _docIdFor(String phone) => phone.replaceAll(RegExp(r'[^0-9]'), '');
+
+  /// Creates or overwrites a user's profile, keyed by phone number so it
+  /// survives reinstalls (see the note in otp_generator.dart about why
+  /// this app doesn't key profiles by Firebase Auth uid).
+  static Future<void> createOrUpdateUser(UserProfile profile) async {
+    await _firestore
+        .collection('users')
+        .doc(_docIdFor(profile.phone))
+        .set(profile.toJson(), SetOptions(merge: true));
   }
 
-  static Future<Map<String, dynamic>?> getUser({required String uid}) async {
-    final snapshot = await _firestore.collection('users').doc(uid).get();
-    if (!snapshot.exists) return null;
-    return snapshot.data();
+  static Future<UserProfile?> fetchByPhone(String phone) async {
+    final doc = await _firestore.collection('users').doc(_docIdFor(phone)).get();
+    if (!doc.exists) return null;
+    return UserProfile.fromJson(doc.data()!);
   }
 
-  static Future<void> createOrUpdateUser({
-    required String uid,
-    required String phoneNumber,
-    required String role,
-    String name = 'User',
-    String? email,
-    String? roleDetail,
+  /// Uploads a driver's license or car photo to Firebase Storage and
+  /// returns its download URL.
+  static Future<String> uploadDriverDocument({
+    required String phone,
+    required File file,
+    required String label, // 'license' or 'car'
   }) async {
-    final data = <String, dynamic>{
-      'uid': uid,
-      'phone': phoneNumber,
-      'role': role,
-      'name': name,
-      'email': email,
-      'isAuthenticated': true,
-      'authProvider': 'otp-demo',
-      'lastLoginAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-    };
-
-    if (role.toLowerCase() == 'driver') {
-      data['vehicleType'] = roleDetail ?? 'General';
-    } else {
-      data['travelPreference'] = roleDetail ?? 'General';
-    }
-
-    await _firestore.collection('users').doc(uid).set(data, SetOptions(merge: true));
-  }
-
-  static Future<void> updateUser({
-    required String uid,
-    String? name,
-    String? email,
-  }) async {
-    final data = buildUserUpdateData(name: name, email: email);
-    if (data.isEmpty) return;
-    await _firestore.collection('users').doc(uid).set(data, SetOptions(merge: true));
+    final ref = _storage.ref().child('driver_documents/${_docIdFor(phone)}/$label.jpg');
+    await ref.putFile(file);
+    return ref.getDownloadURL();
   }
 }

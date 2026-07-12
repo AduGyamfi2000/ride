@@ -1,0 +1,12 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Driver documents (license + car photos). Same caveat as
+    // firestore.rules: any signed-in (anonymous) session can read/write
+    // any driver's documents, because there's no verified phone <-> session
+    // binding without a backend. See lib/auth/otp_generator.dart.
+    match /driver_documents/{phoneId}/{fileName} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

@@ -125,9 +125,12 @@ class AdminScreenState extends State<AdminScreen> {
                     itemCount: users.length,
                     itemBuilder: (context, index) {
                       var user = users[index].data() as Map<String, dynamic>;
+                      final displayName = [user['firstName'], user['lastName']]
+                          .where((n) => n != null && (n as String).isNotEmpty)
+                          .join(' ');
                       return ListTile(
-                        title: Text(user['name'] ?? 'Unnamed User'),
-                        subtitle: Text('Phone: ${user['phone'] ?? 'N/A'}'),
+                        title: Text(displayName.isNotEmpty ? displayName : 'Unnamed User'),
+                        subtitle: Text('Phone: ${user['phone'] ?? 'N/A'} • ${user['role'] ?? 'Passenger'}'),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [

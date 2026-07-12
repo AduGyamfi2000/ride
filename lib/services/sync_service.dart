@@ -10,13 +10,7 @@ class SyncService {
   void start() {
     _sub ??= _connectivity.onConnectivityChanged.listen((result) {
       if (result != ConnectivityResult.none) {
-        uploadPendingRides();
-      }
-    });
-
-    _connectivity.checkConnectivity().then((result) {
-      if (result != ConnectivityResult.none) {
-        uploadPendingRides();
+        _uploadPendingRides();
       }
     });
   }
@@ -26,7 +20,7 @@ class SyncService {
     _sub = null;
   }
 
-  Future<void> uploadPendingRides() async {
+  Future<void> _uploadPendingRides() async {
     final store = OfflineRideStore();
     final rides = await store.loadRides();
     if (rides.isEmpty) return;
@@ -34,8 +28,16 @@ class SyncService {
     final batch = FirebaseFirestore.instance.batch();
     final coll = FirebaseFirestore.instance.collection('rideRequests');
     for (var ride in rides) {
-      final doc = coll.doc();
-      batch.set(doc, ride.toJson());
+      // Reuse the id assigned when the ride was created offline so a
+      // re-sync (or the app being killed mid-sync) can never create a
+      // duplicate document.
+      final doc = ride.id != null ? coll.doc(ride.id) : coll.doc();
+      final data = ride.toJson();
+      // Firestore needs a real Timestamp (not the millis int used for
+      // Hive storage) so DriverHomeScreen's createdAt range query can
+      // actually match synced rides.
+      data['createdAt'] = Timestamp.fromDate(ride.createdAt);
+      batch.set(doc, data, SetOptions(merge: true));
     }
 
     try {

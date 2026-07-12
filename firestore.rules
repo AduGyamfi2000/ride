@@ -5,17 +5,47 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || request.auth.token.email == 'admin@ride.app');
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId;
-      allow delete: if isSignedIn() && request.auth.token.email == 'admin@ride.app';
+    // ---------------------------------------------------------------
+    // IMPORTANT — read this before relying on these rules for security.
+    //
+    // This app no longer uses Firebase's real phone-number auth (see
+    // lib/auth/otp_generator.dart) — OTPs are generated/verified via a
+    // custom Firestore-backed flow, and successful verification just
+    // signs the user in anonymously. That means Firestore has no
+    // cryptographic way to know which phone number a given signed-in
+    // session actually belongs to (no `request.auth.token.phone_number`
+    // claim exists for anonymous sessions), so rules below can only
+    // check "is this session signed in at all", not "does this session
+    // own this specific phone number / is this really an admin". A
+    // production app would need a backend (e.g. a Cloud Function) that
+    // verifies the OTP server-side and mints a custom Firebase token
+    // carrying the verified phone number and role as claims.
+    // ---------------------------------------------------------------
+
+    match /otp_codes/{phoneId} {
+      // Open by necessity: OTP generation/verification happens BEFORE
+      // the user has any Firebase session at all. This is only a UX
+      // check, not an access-control boundary — see the OtpService doc
+      // comment for why, and how to lock this down with a backend later.
+      allow read, write: if true;
+    }
+
+    match /users/{phoneId} {
+      // Any signed-in (anonymous) session can read/write any profile.
+      // This is the direct consequence of not having a verified
+      // phone <-> session binding (see note above). The app's own UI
+      // only lets a user see/edit their own profile, but that is not
+      // enforced at the database level here.
+      allow read, write: if isSignedIn();
     }
 
     match /rideRequests/{rideId} {
+      // Ride ownership IS meaningfully enforced, because it's scoped to
+      // the current anonymous session's own uid (which nobody else can
+      // forge), not to a phone number.
       allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
   }
 }

@@ -1,4 +1,3 @@
 {
-    "java.configuration.updateBuildConfiguration": "interactive",
-    "remote.autoForwardPortsFallback": 0
+    "java.configuration.updateBuildConfiguration": "interactive"
 }
