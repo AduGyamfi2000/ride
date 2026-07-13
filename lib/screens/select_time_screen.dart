@@ -1,14 +1,27 @@
 import 'package:flutter/material.dart';
-import 'confirm_ride_screen.dart'; // Import the ConfirmRideScreen
+import 'package:intl/intl.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_button.dart';
+import 'confirm_ride_screen.dart';
 
 class SelectTimeScreen extends StatefulWidget {
   final String selectedLocation;
   final String selectedVehicle;
+  final double? pickupLat;
+  final double? pickupLng;
+  final String? dropoffLocation;
+  final double? dropoffLat;
+  final double? dropoffLng;
 
   const SelectTimeScreen({
     super.key,
     required this.selectedLocation,
     required this.selectedVehicle,
+    this.pickupLat,
+    this.pickupLng,
+    this.dropoffLocation,
+    this.dropoffLat,
+    this.dropoffLng,
   });
 
   @override
@@ -16,100 +29,198 @@ class SelectTimeScreen extends StatefulWidget {
 }
 
 class SelectTimeScreenState extends State<SelectTimeScreen> {
-  TimeOfDay? selectedTime; // Holds the selected time
+  // 'now' books immediately; 'later' lets the user schedule a future ride.
+  String _mode = 'now';
+  DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTime = TimeOfDay.now();
 
-  // Method to pick the time using time picker
-  Future<void> _selectTime(BuildContext context) async {
-    final TimeOfDay? pickedTime = await showTimePicker(
+  Future<void> _pickDate(BuildContext context) async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialDate: _selectedDate.isBefore(now) ? now : _selectedDate,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 30)),
     );
-    if (pickedTime != null && pickedTime != selectedTime) {
+    if (pickedDate != null) {
       setState(() {
-        selectedTime = pickedTime; // Update the selected time
+        _mode = 'later';
+        _selectedDate = pickedDate;
       });
     }
   }
 
-  // Method to select the current time ("Now")
+  Future<void> _pickTime(BuildContext context) async {
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+    );
+    if (pickedTime != null) {
+      setState(() {
+        _mode = 'later';
+        _selectedTime = pickedTime;
+      });
+    }
+  }
+
   void _selectNow() {
     setState(() {
-      selectedTime = TimeOfDay.now(); // Set current time as the selected time
+      _mode = 'now';
+      _selectedDate = DateTime.now();
+      _selectedTime = TimeOfDay.now();
     });
   }
 
-  // Method to confirm time and navigate to ConfirmRideScreen
-  void _confirmTime() {
-    if (selectedTime != null) {
-      final DateTime now = DateTime.now();
-      final DateTime selectedDateTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        selectedTime!.hour,
-        selectedTime!.minute,
+  DateTime get _combinedDateTime => DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
       );
 
-      // Navigate to the ConfirmRideScreen and pass the selected values
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ConfirmRideScreen(
-            vehicleName: widget.selectedVehicle,
-            location: widget.selectedLocation,
-            rideTime: selectedDateTime, // Pass the selected time
-          ),
-        ),
-      );
-    } else {
+  void _confirmTime() {
+    final rideDateTime = _mode == 'now' ? DateTime.now() : _combinedDateTime;
+
+    if (_mode == 'later' && rideDateTime.isBefore(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a time.')),
+        const SnackBar(content: Text('Please choose a time in the future.')),
       );
+      return;
     }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ConfirmRideScreen(
+          vehicleName: widget.selectedVehicle,
+          location: widget.selectedLocation,
+          rideTime: rideDateTime,
+          pickupLat: widget.pickupLat,
+          pickupLng: widget.pickupLng,
+          dropoffLocation: widget.dropoffLocation,
+          dropoffLat: widget.dropoffLat,
+          dropoffLng: widget.dropoffLng,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isNow = _mode == 'now';
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select Time'),
-        backgroundColor: Colors.green,
-      ),
+      appBar: AppBar(title: const Text('Select Time')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Text('Pickup', style: AppTextStyles.bodyMedium),
+            const SizedBox(height: 4),
+            Text(widget.selectedLocation, style: AppTextStyles.headlineMedium),
+            if (widget.dropoffLocation != null) ...[
+              const SizedBox(height: 12),
+              const Text('Drop-off', style: AppTextStyles.bodyMedium),
+              const SizedBox(height: 4),
+              Text(widget.dropoffLocation!, style: AppTextStyles.headlineMedium),
+            ],
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: _ModeCard(
+                    label: 'Ride Now',
+                    icon: Icons.flash_on,
+                    selected: isNow,
+                    onTap: _selectNow,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ModeCard(
+                    label: 'Schedule for Later',
+                    icon: Icons.event,
+                    selected: !isNow,
+                    onTap: () => setState(() => _mode = 'later'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            if (!isNow) ...[
+              AppButton(
+                label: 'Date: ${DateFormat('EEE, MMM d').format(_selectedDate)}',
+                icon: Icons.calendar_today,
+                variant: AppButtonVariant.outlined,
+                isLarge: false,
+                onPressed: () => _pickDate(context),
+              ),
+              const SizedBox(height: 12),
+              AppButton(
+                label: 'Time: ${_selectedTime.format(context)}',
+                icon: Icons.access_time,
+                variant: AppButtonVariant.outlined,
+                isLarge: false,
+                onPressed: () => _pickTime(context),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Your ride will be scheduled for ${DateFormat('EEE, MMM d • h:mm a').format(_combinedDateTime)}.',
+                  style: const TextStyle(color: AppColors.info, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+            const Spacer(),
+            AppButton(
+              label: isNow ? 'Confirm — Ride Now' : 'Confirm Schedule',
+              icon: Icons.check,
+              onPressed: _confirmTime,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ModeCard({required this.label, required this.icon, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withValues(alpha: 0.12) : AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected ? AppColors.primary : AppColors.surfaceVariant, width: 1.5),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: selected ? AppColors.primary : AppColors.textHint),
+            const SizedBox(height: 8),
             Text(
-              'Selected Location: ${widget.selectedLocation}',
-              style: const TextStyle(fontSize: 18),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () => _selectTime(context), // Open time picker
-              child: const Text('Choose Time'),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: _selectNow, // Set the current time as "Now"
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue, // Different color for "Now"
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: selected ? AppColors.primary : AppColors.textSecondary,
               ),
-              child: const Text('Now'),
-            ),
-            const SizedBox(height: 20),
-            if (selectedTime != null)
-              Text(
-                'Selected Time: ${selectedTime!.format(context)}',
-                style: const TextStyle(fontSize: 18),
-              ),
-            const SizedBox(height: 40),
-            ElevatedButton(
-              onPressed:
-                  _confirmTime, // Confirm time and navigate to confirm ride screen
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-              ),
-              child: const Text('Confirm Time'),
             ),
           ],
         ),

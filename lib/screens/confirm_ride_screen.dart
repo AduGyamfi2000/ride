@@ -3,21 +3,37 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/ride_model.dart';
 import '../providers/ride_provider.dart';
+import '../services/fare_service.dart';
 import '../services/offline_sync_service.dart';
+import '../services/user_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_button.dart';
 
 class ConfirmRideScreen extends StatefulWidget {
   final String vehicleName;
   final String location;
   final DateTime? rideTime;
+  final double? pickupLat;
+  final double? pickupLng;
+  final String? dropoffLocation;
+  final double? dropoffLat;
+  final double? dropoffLng;
 
   const ConfirmRideScreen({
     super.key,
     required this.vehicleName,
     required this.location,
     this.rideTime,
+    this.pickupLat,
+    this.pickupLng,
+    this.dropoffLocation,
+    this.dropoffLat,
+    this.dropoffLng,
   });
 
   @override
@@ -26,6 +42,23 @@ class ConfirmRideScreen extends StatefulWidget {
 
 class ConfirmRideScreenState extends State<ConfirmRideScreen> {
   FlutterTts flutterTts = FlutterTts();
+  bool _isConfirming = false;
+
+  bool get _hasBothPoints =>
+      widget.pickupLat != null && widget.pickupLng != null && widget.dropoffLat != null && widget.dropoffLng != null;
+
+  double? get _distanceKm {
+    if (!_hasBothPoints) return null;
+    final meters = Geolocator.distanceBetween(
+      widget.pickupLat!,
+      widget.pickupLng!,
+      widget.dropoffLat!,
+      widget.dropoffLng!,
+    );
+    return meters / 1000;
+  }
+
+  double? get _estimatedFare => FareService.estimate(vehicleName: widget.vehicleName, distanceKm: _distanceKm);
 
   @override
   void initState() {
@@ -37,8 +70,10 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
   _speakRideDetails() async {
     String rideTime =
         widget.rideTime == null ? "now" : "on ${widget.rideTime?.toString()}";
+    final fare = _estimatedFare;
+    String fareText = fare != null ? " Estimated fare is ${FareService.formatGhs(fare)}." : "";
     String rideDetails =
-        "You have selected a ${widget.vehicleName} from ${widget.location}, scheduled for $rideTime.";
+        "You have selected a ${widget.vehicleName} from ${widget.location}, scheduled for $rideTime.$fareText";
     await flutterTts.speak(rideDetails);
   }
 
@@ -47,9 +82,33 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
   // written twice (once here, once again by SyncService when connectivity
   // returns).
   void _confirmRide() async {
+    setState(() => _isConfirming = true);
+
     // Convert DateTime? to String
     String? rideTimeString = widget.rideTime?.toString();
     final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    // Anonymous Firebase users never have a displayName, so this used to
+    // always write "Passenger" regardless of who actually booked — look
+    // up their real first name from the phone-keyed profile instead.
+    // Resolved once here (not just in the online branch) so offline-queued
+    // rides carry the right name too once SyncService uploads them.
+    final prefs = await SharedPreferences.getInstance();
+    final myPhone = prefs.getString('userPhone');
+    final myProfile = myPhone != null ? await UserService.fetchByPhone(myPhone) : null;
+    final passengerName = myProfile?.firstName ?? 'Passenger';
+
+    // A ride booked more than a few minutes out is a scheduled/future
+    // ride rather than an immediate one — surfaced as a distinct status
+    // so drivers/admins (and RideStatusBadge in the UI) can tell them apart.
+    final isScheduled = widget.rideTime != null &&
+        widget.rideTime!.isAfter(DateTime.now().add(const Duration(minutes: 5)));
+    // 'Searching' = awaiting a driver to accept; a driver accepting moves
+    // it to 'Accepted' (see driver_home_screen.dart).
+    final rideStatus = isScheduled ? 'Scheduled' : 'Searching';
+
+    final distanceKm = _distanceKm;
+    final estimatedFare = _estimatedFare;
 
     // A Firestore doc() call generates a unique id locally without writing
     // anything, so we can use it as our single source of truth for this
@@ -63,8 +122,15 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
       location: widget.location,
       rideTime: rideTimeString,
       pickupAddress: widget.location,
-      dropoffAddress: widget.location,
-      status: 'Confirmed',
+      dropoffAddress: widget.dropoffLocation ?? widget.location,
+      pickupLat: widget.pickupLat,
+      pickupLng: widget.pickupLng,
+      dropoffLat: widget.dropoffLat,
+      dropoffLng: widget.dropoffLng,
+      distanceKm: distanceKm,
+      estimatedFareGhs: estimatedFare,
+      status: rideStatus,
+      passengerName: passengerName,
     );
 
     Provider.of<RideProvider>(context, listen: false).setOngoingRide(ride);
@@ -94,9 +160,16 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
         'uid': uid,
         'vehicleName': widget.vehicleName,
         'location': widget.location,
+        'dropoffLocation': widget.dropoffLocation ?? widget.location,
         'rideTime': rideTimeString ?? 'Now',
-        'passengerName': FirebaseAuth.instance.currentUser?.displayName ?? 'Passenger',
-        'status': 'Confirmed',
+        'passengerName': passengerName,
+        'pickupLat': widget.pickupLat,
+        'pickupLng': widget.pickupLng,
+        'dropoffLat': widget.dropoffLat,
+        'dropoffLng': widget.dropoffLng,
+        'distanceKm': distanceKm,
+        'estimatedFareGhs': estimatedFare,
+        'status': rideStatus,
         'createdAt': Timestamp.fromDate(ride.createdAt),
         'time': rideTimeString ?? 'Now',
       });
@@ -115,94 +188,108 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not reach the server, ride saved for later sync: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _isConfirming = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final distanceKm = _distanceKm;
+    final fare = _estimatedFare;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Confirm Your Ride'),
-        backgroundColor: Colors.green,
-      ),
+      appBar: AppBar(title: const Text('Confirm Your Ride')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Ride Details',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
+            const Text('Ride Details', style: AppTextStyles.displayLarge),
             const SizedBox(height: 20),
-            _rideDetailRow('Vehicle', widget.vehicleName),
-            const SizedBox(height: 10),
-            _rideDetailRow('Location', widget.location),
-            const SizedBox(height: 10),
-            _rideDetailRow(
-              'Time',
-              widget.rideTime == null ? 'Now' : widget.rideTime.toString(),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _rideDetailRow('Vehicle', widget.vehicleName),
+                    const Divider(height: 24),
+                    _rideDetailRow('Pickup', widget.location),
+                    if (widget.dropoffLocation != null) ...[
+                      const Divider(height: 24),
+                      _rideDetailRow('Drop-off', widget.dropoffLocation!),
+                    ],
+                    const Divider(height: 24),
+                    _rideDetailRow(
+                      'Time',
+                      widget.rideTime == null ? 'Now' : widget.rideTime.toString(),
+                    ),
+                    if (distanceKm != null) ...[
+                      const Divider(height: 24),
+                      _rideDetailRow('Distance', '${distanceKm.toStringAsFixed(1)} km'),
+                    ],
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 16),
+            if (fare != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.secondary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Estimated Fare', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Text(
+                      FareService.formatGhs(fare),
+                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.secondary),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Estimate only — flat rate per distance, not live pricing.',
+                      style: AppTextStyles.caption,
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  "Fare estimate isn't available (missing pickup or drop-off location).",
+                  style: AppTextStyles.bodyMedium,
+                ),
+              ),
+            const SizedBox(height: 24),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton(
-                  onPressed: _confirmRide, // Confirm ride action
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                  ),
-                  child: const Text(
-                    'Confirm',
-                    style: TextStyle(fontSize: 18),
+                Expanded(
+                  child: AppButton(
+                    label: 'Go Back',
+                    variant: AppButtonVariant.outlined,
+                    onPressed: () => Navigator.pop(context),
                   ),
                 ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                  ),
-                  child: const Text(
-                    'Go Back',
-                    style: TextStyle(fontSize: 18),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppButton(
+                    label: 'Confirm',
+                    isLoading: _isConfirming,
+                    onPressed: _isConfirming ? null : _confirmRide,
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 40),
-
-            // Display Ongoing Rides section
-            const Text(
-              'Ongoing Rides',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: Consumer<RideProvider>(
-                builder: (context, rideProvider, child) {
-                  return rideProvider.ongoingRides.isEmpty
-                      ? const Center(
-                          child: Text('No ongoing rides.'),
-                        )
-                      : ListView.builder(
-                          itemCount: rideProvider.ongoingRides.length,
-                          itemBuilder: (context, index) {
-                            final ride = rideProvider.ongoingRides[index];
-                            return Card(
-                              child: ListTile(
-                                title: Text(
-                                    '${ride.vehicleName} from ${ride.location}'),
-                                subtitle: Text(
-                                  'Time: ${ride.rideTime ?? 'Now'}',
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                },
-              ),
             ),
           ],
         ),
@@ -215,18 +302,12 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 20,
-            color: Colors.grey[700],
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
       ],

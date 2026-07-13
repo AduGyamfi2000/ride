@@ -8,8 +8,6 @@ class RideProvider extends ChangeNotifier {
   Ride? get ongoingRide => _ongoingRide;
   List<Ride> get rideHistory => _rideHistory;
 
-  List<Ride> ongoingRides = [];
-
   // Set the ongoing ride from a fully-built Ride (keeps id/uid/status intact)
   void setOngoingRide(Ride ride) {
     _ongoingRide = ride;

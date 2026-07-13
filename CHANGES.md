@@ -181,6 +181,179 @@ claims, instead of anonymous auth.
   Firebase Console (or `firebase deploy`) — same as before, editing the
   local files does nothing until published.
 
+## New: nearby places (market/hospital/school/bank) and ride scheduling
+
+- `lib/services/places_service.dart` (**new**) — calls the Google Places
+  "Nearby Search" API for four categories (Market → `supermarket`,
+  Hospital, School, Bank), returns results merged and sorted by distance.
+  Fails soft (returns `[]`) on any error so one bad category/API hiccup
+  doesn't break the screen.
+- `lib/core/api_keys.dart` (**new**) — centralizes the existing Google Maps
+  key so `PlacesService` doesn't need its own copy.
+  **Places API must be enabled for this key in Google Cloud Console** —
+  it's a separate API/billing SKU from "Maps SDK for Android/iOS" and
+  "Maps JavaScript API", which are the only ones enabled so far.
+- `lib/screens/map_location_picker_screen.dart` (rewritten) — the map is
+  unchanged and still the main view. Underneath it, when GPS is on, a
+  category-filter chip row (All/Market/Hospital/School/Bank) sits above a
+  horizontal scrollable strip of nearby place cards (name + distance);
+  tapping one sets it as the pickup point, same as tapping the map. Nearby
+  places also show as markers on the map itself. If GPS is off/denied, the
+  strip is replaced with a one-line hint instead of silently showing
+  nothing.
+- `lib/screens/select_time_screen.dart` (rewritten) — now offers **"Ride
+  Now"** or **"Schedule for Later"**. Scheduling opens a date picker
+  (today up to 30 days out) and a time picker, with a preview line showing
+  the exact scheduled moment before confirming.
+- `lib/screens/confirm_ride_screen.dart` — rides booked more than 5 minutes
+  out are now saved with `status: 'Scheduled'` instead of `'Confirmed'`,
+  in both the Firestore write and the offline (Hive) queue path.
+- `lib/widgets/ride_status_badge.dart` — added a `'Scheduled'` case (🗓️,
+  a distinct color) so it reads clearly wherever `RideStatusBadge` is used
+  (currently `HomeScreen`'s ongoing-ride and history lists).
+- New dependency in `pubspec.yaml`: `http: ^1.2.2`. Run `flutter pub get`.
+
+## New: driver accept/complete flow (ride lifecycle)
+
+Drivers previously could only see every ride request with no way to claim
+one. Now:
+
+- `lib/models/ride_model.dart` — added `driverPhone`/`driverName` fields,
+  and the default status for a newly booked ride changed from
+  `'Confirmed'` to `'Searching'` (awaiting a driver) — `'Confirmed'` now
+  reads ambiguously once "a driver accepted" is also a status in the same
+  lifecycle.
+- `lib/screens/confirm_ride_screen.dart` — immediate rides now start as
+  `'Searching'` instead of `'Confirmed'` (scheduled rides still start as
+  `'Scheduled'`, unchanged).
+- `lib/screens/driver_home_screen.dart` (rewritten) — now shows two
+  sections: **New Requests** (unassigned rides, with an **Accept**
+  button) and **My Accepted Rides** (rides this driver accepted, with a
+  **Complete** button). Accepting runs inside a Firestore transaction that
+  checks the ride is still unassigned before claiming it — if two drivers
+  tap Accept at nearly the same moment, only the first transaction commits
+  and the second is told the ride was already taken, instead of silently
+  double-assigning it.
+- `lib/screens/home_screen.dart` — the passenger's ongoing-ride tile is now
+  a `StreamBuilder` on the ride's own Firestore document instead of only
+  showing the static state from when it was booked, so the passenger
+  actually sees the status flip to "Accepted" (and the driver's name) in
+  real time. The Cancel button now also writes `status: 'Cancelled'` to
+  Firestore (previously it only cleared local state — the Firestore
+  document was left stuck at its original status forever).
+- `firestore.rules` — `rideRequests` update is now open to any signed-in
+  session rather than owner-only, because a driver accepting a ride is a
+  *different* anonymous session than the passenger who created it. Same
+  documented trade-off as `users`/`otp_codes`: the app's UI is what stops
+  a passenger session from editing someone else's ride, not the database
+  itself. `delete` stays owner-only. **Redeploy this file.**
+
+## New: live ride tracking
+
+Passengers can now watch their driver approach on a live map instead of
+just seeing a static status label.
+
+- `lib/models/ride_model.dart` — added `pickupLat`/`pickupLng` (the actual
+  coordinates from the map picker, not just the address string) and
+  `passengerName`.
+- Pickup coordinates now flow end-to-end: `MapLocationPickerScreen` →
+  `SelectTimeScreen` → `ConfirmRideScreen` → the Firestore `rideRequests`
+  document (`pickupLat`/`pickupLng` fields). Previously only a free-text
+  address was stored, which wasn't precise enough to measure a driver's
+  distance to pickup.
+- **Fixed while in there:** `passengerName` was being set from
+  `FirebaseAuth.instance.currentUser?.displayName`, which anonymous
+  Firebase users never have — every ride was silently labeled "Passenger"
+  regardless of who booked it. It now resolves the real first name from
+  the phone-keyed profile instead, for both the online and offline
+  booking paths.
+- `lib/screens/driver_home_screen.dart` — while a driver has at least one
+  ride in `Accepted` status, it now streams their live position
+  (`Geolocator.getPositionStream`, 25m distance filter to limit
+  writes/battery use) and writes `driverLat`/`driverLng`/
+  `driverLocationUpdatedAt` onto that ride's Firestore document.
+  Broadcasting starts/stops automatically as accepted rides come and go —
+  a driver with no accepted ride isn't burning battery on GPS. Also fixed
+  a pre-existing leak: the ride-orders listener's `StreamSubscription` was
+  never stored/cancelled; it and the two new subscriptions are now
+  properly cancelled in `dispose()`.
+- `lib/screens/track_ride_screen.dart` (**new**) — a map showing the
+  pickup point and the driver's live position (auto-fits both in view),
+  plus distance-to-pickup and a "last updated Ns ago" freshness indicator.
+  Handles the no-location-yet, completed, and cancelled states explicitly
+  rather than just showing an empty map.
+- `lib/screens/home_screen.dart` — the ongoing-ride tile is now tappable
+  once a driver has accepted, opening `TrackRideScreen`.
+
+## New: admin driver-verification review UI
+
+Drivers have uploaded license/car photos and started life as
+`verificationStatus: 'Pending'` since the signup rework, but nothing let an
+admin actually look at them until now.
+
+- `lib/screens/admin_screen.dart` (rewritten) — restructured into three
+  tabs (**Users**, **Rides**, **Drivers**) instead of one long scrolling
+  page with two independently-scrolling lists crammed into it. A stat card
+  row sits above the tabs, with a 4th "Pending Drivers" card that
+  highlights (amber) when there's a backlog.
+  - **Drivers tab (new):** queries `users` for `role == 'Driver' &&
+    verificationStatus == 'Pending'`, and shows each one's name, phone,
+    license number, car make/model/plate/color, and both uploaded photos
+    (`Image.network` with a loading spinner and a broken-image fallback,
+    since Storage URLs can fail to load). **Approve**/**Reject** buttons
+    flip `verificationStatus` to `'Verified'`/`'Rejected'`.
+  - Rides tab's status filter dropdown updated to match the real status
+    values used elsewhere (`Searching`/`Scheduled`/`Accepted`/etc. instead
+    of the old `Ongoing`, which no ride ever actually had), and now shows
+    the assigned driver's name once a ride has one, via the existing
+    `RideStatusBadge`.
+  - "Active Rides" stat now correctly counts `Searching`/`Accepted`
+    rides — it was previously counting `status == 'Ongoing'`, a value
+    nothing in the app has written since before the ride-lifecycle
+    rework in item #2.
+- No `firestore.rules` changes needed — `users` was already
+  `allow read, write: if isSignedIn()` from the OTP rework, which covers
+  the approve/reject update.
+
+## New: fare estimation (and a real drop-off step, which didn't exist before)
+
+Fare estimation needs a trip distance, and the app never actually asked
+for a destination — `dropoffAddress` was silently set equal to
+`pickupAddress` everywhere. Fixed as part of this, since the fare feature
+is meaningless without it.
+
+- `lib/screens/map_location_picker_screen.dart` — now a two-step flow:
+  choose pickup (as before, map + nearby-places strip), then the same
+  screen switches to "Choose Drop-off Location" (with a back arrow to
+  pickup) before continuing. Both markers show on the map together once
+  set.
+- `lib/screens/select_time_screen.dart`, `confirm_ride_screen.dart` —
+  thread `dropoffLocation`/`dropoffLat`/`dropoffLng` through alongside the
+  existing pickup coordinates.
+- `lib/services/fare_service.dart` (**new**) — flat per-vehicle rates
+  (`Motorcycle`/`Tricycle`/`Bus`/`Taxi`, matching the exact names used in
+  `VehicleSelectionScreen`) times straight-line distance, with a GHS 5
+  minimum fare. **This is an illustrative estimate, not live pricing** —
+  no traffic/time-of-day/surge factor, and straight-line distance will
+  under-count actual road distance. Said plainly in the UI text too, not
+  just in code comments.
+- `lib/models/ride_model.dart` — added `dropoffLat`/`dropoffLng`/
+  `distanceKm`/`estimatedFareGhs`, persisted the same way as the other
+  ride fields (Firestore + Hive offline queue both covered — no
+  `firestore.rules` change needed since these are just additional fields
+  on the same `create`).
+- `lib/screens/confirm_ride_screen.dart` — shows the fare estimate
+  prominently before confirming, and now also speaks it via TTS
+  ("Estimated fare is GH₵12.50"). Also restyled with the app theme
+  (it hadn't been touched since the original review), and removed a dead
+  "Ongoing Rides" section that displayed a `RideProvider.ongoingRides`
+  list nothing in the app ever populated — always showed "No ongoing
+  rides." regardless of reality. That empty list field was removed from
+  `RideProvider` too.
+- `lib/screens/home_screen.dart`'s ongoing-ride tile and
+  `lib/screens/admin_screen.dart`'s Rides tab both now show the fare
+  estimate alongside the existing status/driver info.
+
 ## Known limitations still worth addressing later
 
 - Drivers currently can't "accept" a ride (no status transition/assignment

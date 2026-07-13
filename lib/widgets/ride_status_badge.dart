@@ -17,6 +17,8 @@ class RideStatusBadge extends StatelessWidget {
         return AppColors.statusArrived;
       case 'confirmed':
         return AppColors.statusAccepted;
+      case 'scheduled':
+        return AppColors.secondary;
       case 'completed':
         return AppColors.statusCompleted;
       case 'cancelled':
@@ -38,6 +40,8 @@ class RideStatusBadge extends StatelessWidget {
         return '📍 Arrived';
       case 'confirmed':
         return '✅ Confirmed';
+      case 'scheduled':
+        return '🗓️ Scheduled';
       case 'completed':
         return '🎉 Completed';
       case 'cancelled':

@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/ride_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/offline_sync_service.dart';
+import '../services/fare_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/offline_banner.dart';
 import '../widgets/ride_status_badge.dart';
 import '../widgets/section_header.dart';
 import 'setting_screen.dart';
+import 'track_ride_screen.dart';
 import 'vehicle_selection_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -196,21 +199,7 @@ class HomeScreenState extends State<HomeScreen> {
             },
           ),
           if (_isOngoingExpanded && rideProvider.ongoingRide != null) ...[
-            ListTile(
-              title: Text(
-                  "${rideProvider.ongoingRide!.vehicleName} - ${rideProvider.ongoingRide!.location}",
-                  style:
-                      TextStyle(fontSize: settingsProvider.settings.textSize)),
-              subtitle: Text(
-                  "Time: ${rideProvider.ongoingRide!.rideTime ?? 'Now'}",
-                  style:
-                      TextStyle(fontSize: settingsProvider.settings.textSize)),
-              leading: RideStatusBadge(status: rideProvider.ongoingRide!.status),
-              trailing: IconButton(
-                icon: const Icon(Icons.cancel, color: AppColors.error),
-                onPressed: () => _showCancelConfirmationDialog(rideProvider),
-              ),
-            ),
+            _buildOngoingRideTile(rideProvider, settingsProvider),
           ] else if (_isOngoingExpanded) ...[
             const Center(
               child: Text("No ongoing rides.", style: TextStyle(color: AppColors.textHint)),
@@ -287,6 +276,63 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Shows the ongoing ride's live status/driver info, streamed straight
+  // from Firestore when we have a ride id (created while online, or
+  // already synced from the offline queue). Falls back to the static
+  // locally-held ride if there's no id yet (e.g. just booked offline).
+  Widget _buildOngoingRideTile(RideProvider rideProvider, SettingsProvider settingsProvider) {
+    final localRide = rideProvider.ongoingRide!;
+    if (localRide.id == null) {
+      return ListTile(
+        title: Text("${localRide.vehicleName} - ${localRide.location}",
+            style: TextStyle(fontSize: settingsProvider.settings.textSize)),
+        subtitle: Text("Time: ${localRide.rideTime ?? 'Now'} (syncing...)",
+            style: TextStyle(fontSize: settingsProvider.settings.textSize)),
+        leading: RideStatusBadge(status: localRide.status),
+        trailing: IconButton(
+          icon: const Icon(Icons.cancel, color: AppColors.error),
+          onPressed: () => _showCancelConfirmationDialog(rideProvider),
+        ),
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('rideRequests').doc(localRide.id).snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data() as Map<String, dynamic>?;
+        final status = data?['status'] as String? ?? localRide.status;
+        final driverName = data?['driverName'] as String?;
+
+        return ListTile(
+          onTap: status == 'Accepted'
+              ? () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => TrackRideScreen(rideId: localRide.id!)),
+                  )
+              : null,
+          title: Text("${localRide.vehicleName} - ${localRide.location}",
+              style: TextStyle(fontSize: settingsProvider.settings.textSize)),
+          subtitle: Text(
+            [
+              "Time: ${localRide.rideTime ?? 'Now'}",
+              if (localRide.estimatedFareGhs != null) FareService.formatGhs(localRide.estimatedFareGhs!),
+              if (driverName != null) "Driver: $driverName",
+              if (status == 'Accepted') 'Tap to track',
+            ].join(' • '),
+            style: TextStyle(fontSize: settingsProvider.settings.textSize),
+          ),
+          leading: RideStatusBadge(status: status),
+          trailing: (status == 'Completed' || status == 'Cancelled')
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.cancel, color: AppColors.error),
+                  onPressed: () => _showCancelConfirmationDialog(rideProvider),
+                ),
+        );
+      },
+    );
+  }
+
   void _showCancelConfirmationDialog(RideProvider rideProvider) {
     showDialog(
       context: context,
@@ -304,9 +350,26 @@ class HomeScreenState extends State<HomeScreen> {
               child: const Text('No'),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
+                final rideId = rideProvider.ongoingRide?.id;
+                if (rideId != null) {
+                  // Best-effort: also reflect the cancellation in
+                  // Firestore so the driver's list and admin dashboard
+                  // see it. If this fails (e.g. offline), the ride still
+                  // gets cleared locally below.
+                  try {
+                    await FirebaseFirestore.instance
+                        .collection('rideRequests')
+                        .doc(rideId)
+                        .update({'status': 'Cancelled'});
+                  } catch (_) {
+                    // Ignore — local cancellation still proceeds.
+                  }
+                }
                 rideProvider.cancelOngoingRide(); // Confirm cancellation
-                Navigator.of(context).pop(); // Close the dialog
+                if (context.mounted) {
+                  Navigator.of(context).pop(); // Close the dialog
+                }
               },
               child: const Text('Yes'),
             ),

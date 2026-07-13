@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:ride/screens/home_screen.dart';
 import 'providers/settings_provider.dart';
 import 'providers/ride_provider.dart';
 import 'screens/auth_gate_screen.dart';
@@ -38,7 +39,8 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         // AuthGateScreen owns the onboarding -> login -> home routing
         // decision, and reacts live to auth state changes.
-        home: const AuthGateScreen(),
+        // home: const AuthGateScreen(),
+        home: const HomeScreen(),
       ),
     );
   }

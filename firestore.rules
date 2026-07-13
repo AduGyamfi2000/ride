@@ -40,12 +40,18 @@ service cloud.firestore {
     }
 
     match /rideRequests/{rideId} {
-      // Ride ownership IS meaningfully enforced, because it's scoped to
-      // the current anonymous session's own uid (which nobody else can
-      // forge), not to a phone number.
+      // Reads and creates are still scoped to the current anonymous
+      // session's own uid (which nobody else can forge). Updates,
+      // however, now also need to work for a *driver* accepting or
+      // completing someone else's ride — a different anonymous session
+      // than the one that created it — so, same as `users` above, update
+      // is opened to any signed-in session rather than owner-only. The
+      // app's own UI is what stops a passenger session from editing
+      // other people's rides; the database itself does not enforce it.
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
   }
 }
