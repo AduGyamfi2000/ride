@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import '../theme/app_theme.dart';
 import 'map_location_picker_screen.dart';
 
 class VehicleSelectionScreen extends StatefulWidget {
@@ -32,14 +33,13 @@ class VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Select Vehicle Type'),
-        backgroundColor: Colors.green,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(12.0),
         child: GridView.count(
           crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
           children: <Widget>[
             _vehicleOption('Tricycle', 'assets/images/pragya.png'),
             _vehicleOption('Taxi', 'assets/images/taxi.png'),
@@ -51,33 +51,36 @@ class VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
     );
   }
 
-  // Widget for each vehicle option
+  // Widget for each vehicle option, framed as a proper card matching the
+  // rest of the app's card styling (previously a bare transparent
+  // container with no border/shadow, which read as unfinished/inconsistent
+  // next to every other screen's Card-based layout).
   Widget _vehicleOption(String vehicleName, String imagePath) {
-    return GestureDetector(
-      onTap: () {
-        _speak("You have selected $vehicleName");
-        _navigateToLocationPage(vehicleName); // Navigate to location page
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          // You can set a default color if needed, or leave it transparent
-          color: Colors.transparent,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(imagePath, height: 80),
-            const SizedBox(height: 10),
-            Text(
-              vehicleName,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black, // Changed to black for visibility
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () {
+          _speak("You have selected $vehicleName");
+          _navigateToLocationPage(vehicleName); // Navigate to location page
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(imagePath, height: 76),
+              const SizedBox(height: 12),
+              Text(
+                vehicleName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -55,12 +56,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     final phone = prefs.getString('userPhone');
     if (phone == null) return;
-    final profile = await UserService.fetchByPhone(phone);
-    if (!mounted) return;
-    setState(() {
-      _myPhone = phone;
-      _myName = profile?.fullName ?? 'Driver';
-    });
+    _myPhone = phone; // set even if the profile fetch below fails, so
+    // _watchAcceptedRides() (which only needs the phone, not the name)
+    // still works.
+    try {
+      final profile = await UserService.fetchByPhone(phone);
+      if (!mounted) return;
+      setState(() => _myName = profile?.fullName ?? 'Driver');
+    } catch (e) {
+      // Non-critical for accepting/completing rides — just keep the
+      // 'Driver' fallback name rather than surfacing an error for this.
+    }
   }
 
   /// Watches this driver's currently-accepted rides and starts/stops
@@ -81,6 +87,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       } else if (_acceptedRideIds.isEmpty) {
         _stopBroadcastingLocation();
       }
+    }, onError: (e) {
+      // This query needs a composite index (driverPhone + status) —
+      // see firestore.indexes.json. Without it deployed, this fails
+      // silently with no onError handler; logging it here at least makes
+      // the failure visible in the console instead of "nothing happens".
+      log('Accepted-rides listener failed (check firestore.indexes.json is deployed): $e');
     });
   }
 
@@ -137,6 +149,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           }
         }
       }
+    }, onError: (e) {
+      log('Ride-orders listener failed: $e');
     });
   }
 
@@ -223,6 +237,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                 child: StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance.collection('rideRequests').snapshots(),
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            "Couldn't load ride requests: ${snapshot.error}",
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.bodyMedium,
+                          ),
+                        ),
+                      );
+                    }
                     if (!snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }

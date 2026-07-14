@@ -354,13 +354,163 @@ is meaningless without it.
   `lib/screens/admin_screen.dart`'s Rides tab both now show the fare
   estimate alongside the existing status/driver info.
 
+## Fixes: color consistency, vehicle selection card frame, Confirm Ride errors
+
+- **Color mismatch (green vs orange):** `setting_screen.dart` and
+  `vehicle_selection_screen.dart` both had a hardcoded
+  `backgroundColor: Colors.green` on their `AppBar`, left over from before
+  `AppTheme` existed — every other screen was already using the theme's
+  gold/orange primary color via `AppBarTheme`, so these two stood out.
+  Removed both overrides; all AppBars are now uniformly styled from the
+  theme. Also swapped a stray `Colors.black` label in
+  `vehicle_selection_screen.dart` for `AppColors.textPrimary`.
+- **Vehicle selection now has a proper card frame:** each vehicle option
+  was a bare `Container` with `color: Colors.transparent` — no border, no
+  shadow, nothing to visually mark it as tappable. Each option is now a
+  themed `Card` with an `InkWell` tap ripple, matching every other card in
+  the app.
+- **Confirm Ride "could not reach server":** this message was a catch-all
+  for *any* exception, including ones that had nothing to do with actual
+  network reachability. Specifically fixed:
+  - The passenger-profile lookup ran *before* the try/catch, so a failure
+    there (e.g. rules not deployed) would crash the whole booking flow
+    unhandled instead of being caught anywhere. It's now wrapped in its
+    own try/catch with a fallback name.
+  - Added an explicit check: if there's no active Firebase session at all
+    (`FirebaseAuth.instance.currentUser` is null), the screen now says so
+    directly ("You're not signed in — please log in again") instead of
+    letting it fail deep inside a Firestore permission error.
+  - The Firestore write now has a 15-second timeout, and the error message
+    branches by cause: a `permission-denied` `FirebaseException` gets a
+    message pointing at the two most common real causes in this project
+    (rules not redeployed, or not actually signed in); a genuine timeout
+    gets its own message; everything else still falls back to the
+    original generic message. The raw error is also now logged to the
+    console (`log(...)`) for actual debugging, separate from the
+    friendlier SnackBar text.
+  - **If you're still seeing this after pulling these changes,** the
+    updated SnackBar text should now tell you which of the two it is —
+    paste it here and I can pin down the exact cause.
+
+## Fixes: "backend not working" — welcome name, profile save, and two real bugs
+
+- **Home screen now greets you by first name** ("Welcome, Ama 👋"),
+  looked up from the phone-keyed profile. Falls back to the generic
+  greeting if the profile hasn't loaded yet (or can't be reached), rather
+  than showing nothing.
+
+- **Two silent-failure bugs found and fixed** — these are the most likely
+  actual cause of "the backend doesn't seem to be working":
+
+  1. **Missing composite Firestore indexes.** Two queries in this app
+     filter on two fields at once (`rideRequests` by `driverPhone` +
+     `status` in `driver_home_screen.dart`; `users` by `role` +
+     `verificationStatus` in `admin_screen.dart`'s Drivers tab). Firestore
+     requires an explicit composite index for that — without one, the
+     query fails outright. `firestore.indexes.json` was sitting empty this
+     whole time, so both queries have been silently failing. **Both
+     indexes are now defined in `firestore.indexes.json` — deploy it
+     (`firebase deploy --only firestore:indexes`, or create them manually
+     in Firebase Console → Firestore → Indexes) alongside your rules.**
+     Console will also give you a direct "create this index" link the
+     first time each query runs, if you'd rather do it that way.
+  2. **No error handling on any Firestore stream in the app.** Every
+     `StreamBuilder`/`.listen()` on a Firestore query only checked
+     `snapshot.hasData`, never `snapshot.hasError` (or `onError` for raw
+     listeners). A failed query — like the two above — just showed an
+     infinite loading spinner forever, with nothing in the UI indicating
+     anything was wrong. Added proper error states to every Firestore
+     stream in `driver_home_screen.dart`, `admin_screen.dart`, and
+     `track_ride_screen.dart`, so a failure now shows an actual message
+     instead of a spinner that never resolves.
+
+- **`ProfileScreen` had the same class of bug for editing/saving.**
+  `_load()` and `_save()` had no try/catch at all — any Firestore error
+  (undeployed rules, no connection, etc.) either left the screen stuck on
+  a spinner forever (`_load()`) or threw unhandled with the Save button
+  giving no feedback at all (`_save()`). Both are now guarded: loading
+  shows a real error with a "Try Again" button, and saving shows a clear
+  message on failure instead of silently doing nothing.
+
+- Also guarded the equivalent profile lookups in `home_screen.dart` (for
+  the new welcome name) and `driver_home_screen.dart` (for the driver's
+  display name) — lower-stakes since they degrade to a fallback rather
+  than blocking anything, but consistent with the above.
+
+### If it's still not working after this
+
+Given everything above, the most likely remaining causes are outside the
+code itself:
+1. **`firestore.rules` and `storage.rules` haven't been deployed** — editing
+   these files locally does nothing until published via Firebase Console
+   or `firebase deploy`. This has come up several times already.
+2. **`firestore.indexes.json` hasn't been deployed** (see above — new as of
+   this fix).
+3. **Firestore/Storage might not actually be enabled** on the Firebase
+   project yet — creating a Firebase project does not automatically
+   provision a Firestore database or Storage bucket; both need to be
+   explicitly created once in the Console (Firestore Database → Create
+   database; Storage → Get started).
+
+With the error-handling fixes above, any of these three should now show up
+as a visible, readable error message in the app instead of a silent hang —
+paste that message here and I can tell you exactly which of the three it is.
+
+## Storage without Firebase Storage (Cloudinary swap)
+
+Firebase now requires the paid Blaze plan just to *enable* Cloud Storage —
+there's no free way to turn it on anymore. Since driver license/car photos
+were the only thing using it, swapped that one piece out for
+**Cloudinary**, which has a genuinely free tier (25GB storage/bandwidth,
+no credit card) and needs no backend of its own — the app uploads directly
+via a plain HTTP POST.
+
+**Nothing else changed.** Firestore is untouched — `licenseImageUrl`/
+`carImageUrl` still just store a URL string on the user's profile document,
+exactly as before. Only *where that URL points* is different.
+
+- `lib/services/user_service.dart` — `uploadDriverDocument()` now POSTs to
+  Cloudinary's unsigned upload endpoint instead of `firebase_storage`.
+- `lib/core/api_keys.dart` — added `cloudinaryCloudName` /
+  `cloudinaryUploadPreset` placeholders (**you need to fill these in** —
+  steps below).
+- Removed the `firebase_storage` dependency from `pubspec.yaml`, and
+  `storage.rules` + its entry in `firebase.json` (no longer used —
+  Cloudinary has its own separate access controls, described below).
+
+### Setup steps (free, ~5 minutes)
+
+1. Go to [cloudinary.com](https://cloudinary.com) → **Sign up free** — no
+   credit card required.
+2. On your Cloudinary **Dashboard**, copy your **Cloud name** (shown near
+   the top).
+3. Go to **Settings → Upload** → scroll to **Upload presets** → **Add
+   upload preset**.
+4. Set **Signing Mode** to **Unsigned** (this is what lets the app upload
+   directly without a secret key baked into the app). Give it a name (e.g.
+   `ruralride_driver_docs`) and save.
+5. In `lib/core/api_keys.dart`, replace:
+   - `cloudinaryCloudName` → your Cloud name from step 2
+   - `cloudinaryUploadPreset` → the preset name from step 4
+6. Run `flutter pub get` (the dependency list changed).
+
+That's it — no rules file to deploy for this part. An unsigned preset can
+optionally be restricted in the Cloudinary dashboard (e.g. max file size,
+allowed formats, or requiring moderation) if you want tighter control
+later; by default it accepts uploads from anyone who has the cloud
+name + preset name, which — same caveat as everywhere else in this app's
+auth model — is a reasonable trade-off for a project without a backend,
+not a production-grade access control.
+
 ## Known limitations still worth addressing later
 
-- Drivers currently can't "accept" a ride (no status transition/assignment
-  flow) — every driver sees every open request. Firestore rules were written
-  to match this current behaviour; you'll need to revisit both the rules and
-  the UI once an accept/assign flow is added.
 - The admin phone number is still a hardcoded string in `login_screen.dart`,
   and (per above) admin status now can't be verified at the database level
   at all without a backend minting custom tokens — treat the current admin
   gate as a UI convenience, not a security boundary.
+- Fare estimates use straight-line distance, not road distance — see the
+  note in `lib/services/fare_service.dart` for what a production version
+  would need (a routing/directions API).
+- No push notifications yet — a driver only hears the TTS alert for a new
+  ride while `DriverHomeScreen` is actually open. Item #6 on the
+  "make it better" list.

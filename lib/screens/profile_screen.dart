@@ -19,6 +19,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   bool _loading = true;
+  bool _saving = false;
+  String? _loadError;
   String? _phone;
   UserProfile? _profile;
 
@@ -35,16 +37,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _loading = false);
       return;
     }
-    final profile = await UserService.fetchByPhone(phone);
-    if (!mounted) return;
-    setState(() {
-      _phone = phone;
-      _profile = profile;
-      _firstNameController.text = profile?.firstName ?? '';
-      _lastNameController.text = profile?.lastName ?? '';
-      _emailController.text = profile?.email ?? '';
-      _loading = false;
-    });
+    try {
+      final profile = await UserService.fetchByPhone(phone);
+      if (!mounted) return;
+      setState(() {
+        _phone = phone;
+        _profile = profile;
+        _firstNameController.text = profile?.firstName ?? '';
+        _lastNameController.text = profile?.lastName ?? '';
+        _emailController.text = profile?.email ?? '';
+        _loading = false;
+      });
+    } catch (e) {
+      // Previously unguarded — any Firestore error here (undeployed
+      // rules, no connection, etc.) left the screen stuck on a spinner
+      // forever with no explanation. Now it fails visibly instead.
+      if (!mounted) return;
+      setState(() {
+        _loadError = "Couldn't load your profile: $e";
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -63,7 +76,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
       return;
     }
-    setState(() => _loading = true);
+    setState(() => _saving = true);
     final updated = UserProfile(
       phone: _profile!.phone,
       firstName: _firstNameController.text.trim(),
@@ -79,13 +92,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       carImageUrl: _profile!.carImageUrl,
       verificationStatus: _profile!.verificationStatus,
     );
-    await UserService.createOrUpdateUser(updated);
-    if (!mounted) return;
-    setState(() {
-      _profile = updated;
-      _loading = false;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated')));
+    try {
+      await UserService.createOrUpdateUser(updated);
+      if (!mounted) return;
+      setState(() => _profile = updated);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated')));
+    } catch (e) {
+      // Previously unguarded — a failed write here (e.g. undeployed
+      // rules) would throw unhandled, and the "Save" button gave no
+      // indication anything went wrong.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Couldn't save your profile: $e")),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _signOut() async {
@@ -103,6 +125,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_loadError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profile')),
+        body: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.cloud_off, size: 40, color: AppColors.textHint),
+              const SizedBox(height: 12),
+              Text(_loadError!, textAlign: TextAlign.center, style: AppTextStyles.bodyMedium),
+              const SizedBox(height: 20),
+              AppButton(
+                label: 'Try Again',
+                isLarge: false,
+                onPressed: () {
+                  setState(() {
+                    _loading = true;
+                    _loadError = null;
+                  });
+                  _load();
+                },
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     if (_profile == null) {
@@ -147,7 +198,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Text('Verification: ${_profile!.verificationStatus}', style: AppTextStyles.bodyMedium),
             ],
             const SizedBox(height: 24),
-            AppButton(label: 'Save', onPressed: _save),
+            AppButton(label: 'Save', isLoading: _saving, onPressed: _saving ? null : _save),
             const SizedBox(height: 12),
             AppButton(label: 'Sign Out', variant: AppButtonVariant.outlined, onPressed: _signOut),
           ],

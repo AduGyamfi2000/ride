@@ -158,6 +158,9 @@ class AdminScreenState extends State<AdminScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _getUsersStream(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Could not load users: ${snapshot.error}'));
+        }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -227,6 +230,9 @@ class AdminScreenState extends State<AdminScreen> {
           child: StreamBuilder<QuerySnapshot>(
             stream: _getRideRequestsStream(),
             builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Could not load rides: ${snapshot.error}'));
+              }
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
@@ -268,6 +274,9 @@ class AdminScreenState extends State<AdminScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _getPendingDriversStream(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Could not load drivers: ${snapshot.error}'));
+        }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }

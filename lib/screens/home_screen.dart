@@ -3,10 +3,12 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/ride_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/offline_sync_service.dart';
 import '../services/fare_service.dart';
+import '../services/user_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/offline_banner.dart';
@@ -31,12 +33,29 @@ class HomeScreenState extends State<HomeScreen> {
   bool _isHistoryExpanded = false;
   bool _isOffline = false;
   int _pendingRideCount = 0;
+  String? _myFirstName;
 
   @override
   void initState() {
     super.initState();
     _introduceTabs(); // Automatically play the introduction on Home tab load
     _checkConnectivity();
+    _loadMyName();
+  }
+
+  Future<void> _loadMyName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final phone = prefs.getString('userPhone');
+    if (phone == null) return;
+    try {
+      final profile = await UserService.fetchByPhone(phone);
+      if (!mounted || profile == null) return;
+      setState(() => _myFirstName = profile.firstName);
+    } catch (e) {
+      // Non-critical — the generic "Welcome to Smart Rural Ride" greeting
+      // is a fine fallback, so just skip showing a name rather than
+      // surfacing an error for something this minor.
+    }
   }
 
   Future<void> _checkConnectivity() async {
@@ -152,7 +171,7 @@ class HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Welcome to Smart Rural Ride',
+                    _myFirstName != null ? 'Welcome, $_myFirstName 👋' : 'Welcome to Smart Rural Ride',
                     style: TextStyle(
                       fontSize: settingsProvider.settings.textSize + 2,
                       fontWeight: FontWeight.bold,

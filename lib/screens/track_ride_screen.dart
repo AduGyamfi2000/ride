@@ -51,6 +51,18 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('rideRequests').doc(widget.rideId).snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Text(
+                  "Couldn't load this ride: ${snapshot.error}",
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyMedium,
+                ),
+              ),
+            );
+          }
           if (!snapshot.hasData || !snapshot.data!.exists) {
             return const Center(child: CircularProgressIndicator());
           }

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -84,19 +86,43 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
   void _confirmRide() async {
     setState(() => _isConfirming = true);
 
+    // If there's no active Firebase session at all (e.g. the app was
+    // reopened after being signed out, or something skipped the login
+    // flow), every Firestore write below will fail with a permission
+    // error — catch that here with a clear message instead of letting it
+    // surface as a confusing generic failure deep in the try/catch below.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _isConfirming = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You're not signed in — please log in again before booking a ride."),
+        ),
+      );
+      return;
+    }
+
     // Convert DateTime? to String
     String? rideTimeString = widget.rideTime?.toString();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
 
     // Anonymous Firebase users never have a displayName, so this used to
     // always write "Passenger" regardless of who actually booked — look
     // up their real first name from the phone-keyed profile instead.
     // Resolved once here (not just in the online branch) so offline-queued
     // rides carry the right name too once SyncService uploads them.
-    final prefs = await SharedPreferences.getInstance();
-    final myPhone = prefs.getString('userPhone');
-    final myProfile = myPhone != null ? await UserService.fetchByPhone(myPhone) : null;
-    final passengerName = myProfile?.firstName ?? 'Passenger';
+    // Guarded on its own: a failure here (e.g. rules not yet deployed)
+    // shouldn't crash the whole booking flow before we even reach the
+    // try/catch below — just fall back to a generic label.
+    String passengerName = 'Passenger';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final myPhone = prefs.getString('userPhone');
+      final myProfile = myPhone != null ? await UserService.fetchByPhone(myPhone) : null;
+      if (myProfile?.firstName != null) passengerName = myProfile!.firstName;
+    } catch (e) {
+      log('Could not resolve passenger profile, using fallback name: $e');
+    }
 
     // A ride booked more than a few minutes out is a scheduled/future
     // ride rather than an immediate one — surfaced as a distinct status
@@ -155,7 +181,10 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
     // Online: write straight to Firestore using the same id (set is
     // idempotent, so even a retry can't create a duplicate document).
     try {
-      await FirebaseFirestore.instance.collection('rideRequests').doc(rideId).set({
+      await FirebaseFirestore.instance
+          .collection('rideRequests')
+          .doc(rideId)
+          .set({
         'id': rideId,
         'uid': uid,
         'vehicleName': widget.vehicleName,
@@ -172,7 +201,7 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
         'status': rideStatus,
         'createdAt': Timestamp.fromDate(ride.createdAt),
         'time': rideTimeString ?? 'Now',
-      });
+      }).timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -181,13 +210,28 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
 
       Navigator.popUntil(context, (route) => route.isFirst);
     } catch (e) {
+      // Log the real error to the console so it's actually diagnosable —
+      // the SnackBar below is deliberately shorter/friendlier than this.
+      log('Ride confirm failed: $e');
+
       // Firestore write failed even though we appeared online — fall back
       // to the offline queue so the ride isn't lost.
       await OfflineRideStore().saveRide(ride);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not reach the server, ride saved for later sync: $e')),
-      );
+
+      String message;
+      if (e is FirebaseException && e.code == 'permission-denied') {
+        // By far the most common cause in this project: firestore.rules
+        // was edited locally but never redeployed to the Firebase
+        // Console, or the session genuinely isn't signed in.
+        message = "Couldn't save to the server (permission denied) — the ride is queued locally. "
+            "Check that firestore.rules has been deployed and that you're logged in.";
+      } else if (e is TimeoutException) {
+        message = "Couldn't reach the server in time — the ride is saved locally and will sync automatically.";
+      } else {
+        message = 'Could not reach the server, ride saved for later sync: $e';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) setState(() => _isConfirming = false);
     }

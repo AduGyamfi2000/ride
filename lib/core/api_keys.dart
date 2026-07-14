@@ -10,4 +10,13 @@
 class ApiKeys {
   ApiKeys._();
   static const String googleMaps = 'AIzaSyCb29QieeoHzxFuMnYfYHZXGb220Zto354';
+
+  // Cloudinary — used for driver license/car photo uploads instead of
+  // Firebase Storage (which now requires the paid Blaze plan just to
+  // enable). Cloudinary's free tier (25GB storage/bandwidth) needs no
+  // credit card. Replace both values below with your own after signing
+  // up — see the setup steps in CHANGES.md under "Storage without
+  // Firebase Storage".
+  static const String cloudinaryCloudName = 'j2hwvn0g';
+  static const String cloudinaryUploadPreset = 'tkiykz8d';
 }
