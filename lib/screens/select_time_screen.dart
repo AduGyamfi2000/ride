@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import 'confirm_ride_screen.dart';
@@ -33,6 +36,19 @@ class SelectTimeScreenState extends State<SelectTimeScreen> {
   String _mode = 'now';
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'select_time',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
+  }
 
   Future<void> _pickDate(BuildContext context) async {
     final now = DateTime.now();

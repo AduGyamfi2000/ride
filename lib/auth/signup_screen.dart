@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import '../models/pending_signup.dart';
+import '../providers/settings_provider.dart';
 import '../screens/otp_screen.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/textfield.dart';
@@ -21,6 +24,8 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
 
   // Driver-only controllers.
   final TextEditingController _licenseController = TextEditingController();
@@ -38,6 +43,14 @@ class _SignupScreenState extends State<SignupScreen> {
   void initState() {
     super.initState();
     _selectedRole = widget.initialRole == 'Driver' ? 'Driver' : 'Passenger';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'signup',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
   }
 
   @override
@@ -46,6 +59,8 @@ class _SignupScreenState extends State<SignupScreen> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _licenseController.dispose();
     _carMakeController.dispose();
     _carModelController.dispose();
@@ -95,6 +110,20 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     }
 
+    // Password is entirely optional — only validated if they've started
+    // typing one.
+    final password = _passwordController.text;
+    if (password.isNotEmpty) {
+      if (password.length < 6) {
+        setState(() => _errorMessage = 'Password must be at least 6 characters.');
+        return;
+      }
+      if (password != _confirmPasswordController.text) {
+        setState(() => _errorMessage = 'Passwords do not match.');
+        return;
+      }
+    }
+
     setState(() => _errorMessage = null);
 
     final pending = PendingSignup(
@@ -102,6 +131,7 @@ class _SignupScreenState extends State<SignupScreen> {
       firstName: firstName,
       lastName: _lastNameController.text.trim().isNotEmpty ? _lastNameController.text.trim() : null,
       email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
+      password: password.isNotEmpty ? password : null,
       licenseNumber: _isDriver ? _licenseController.text.trim() : null,
       carMake: _isDriver ? _carMakeController.text.trim() : null,
       carModel: _isDriver ? _carModelController.text.trim() : null,
@@ -183,6 +213,29 @@ class _SignupScreenState extends State<SignupScreen> {
               hint: 'e.g. ama@example.com',
               keyboardType: TextInputType.emailAddress,
               prefixIcon: Icons.email_outlined,
+            ),
+            const SizedBox(height: 24),
+            const Text('Password (optional)', style: AppTextStyles.headlineMedium),
+            const SizedBox(height: 4),
+            const Text(
+              "Set a password if you'd like to skip the OTP step next time you log in. Leave blank to keep using a code every time.",
+              style: AppTextStyles.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            CustomTextField(
+              controller: _passwordController,
+              label: 'Password (optional)',
+              hint: 'At least 6 characters',
+              isPassword: true,
+              prefixIcon: Icons.lock_outline,
+            ),
+            const SizedBox(height: 16),
+            CustomTextField(
+              controller: _confirmPasswordController,
+              label: 'Confirm Password',
+              hint: 'Re-enter your password',
+              isPassword: true,
+              prefixIcon: Icons.lock_outline,
             ),
             if (_isDriver) ...[
               const SizedBox(height: 24),

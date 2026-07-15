@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/ride_model.dart';
 import '../providers/ride_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/fare_service.dart';
 import '../services/offline_sync_service.dart';
 import '../services/user_service.dart';
@@ -68,8 +69,15 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
     _speakRideDetails();
   }
 
-  // Function to read ride details using Text-to-Speech
+  // Function to read ride details using Text-to-Speech. This is already
+  // more useful here than a generic page description would be — it's the
+  // caller's dynamic destination/fare, not boilerplate — so it's kept as
+  // is, just now respecting the voiceEnabled setting (previously ignored
+  // it entirely).
   _speakRideDetails() async {
+    if (!mounted) return;
+    final settings = context.read<SettingsProvider>().settings;
+    if (!settings.voiceEnabled) return;
     String rideTime =
         widget.rideTime == null ? "now" : "on ${widget.rideTime?.toString()}";
     final fare = _estimatedFare;

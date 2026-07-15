@@ -9,6 +9,7 @@ import '../providers/settings_provider.dart';
 import '../services/offline_sync_service.dart';
 import '../services/fare_service.dart';
 import '../services/user_service.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/offline_banner.dart';
@@ -71,18 +72,22 @@ class HomeScreenState extends State<HomeScreen> {
   // Stop speaking if TTS is ongoing
   void _stopSpeaking() async {
     if (_isSpeaking) {
-      await flutterTts.stop();
+      await VoiceGuideService().stop();
       setState(() {
         _isSpeaking = false;
       });
     }
   }
 
-  // Introduce the tabs on Home screen load
+  // Introduce the Home page on load
   void _introduceTabs() async {
     _stopSpeaking(); // Stop any ongoing TTS
-    await flutterTts.speak(
-        "You are now on the Home tab. The blue tab at the bottom leads to Order Ride where you can select a vehicle. The red tab leads to Settings where you can change the language. Below, you can view your ongoing rides. Tap to explore.");
+    final settings = context.read<SettingsProvider>().settings;
+    await VoiceGuideService().describePage(
+      pageKey: 'home',
+      language: settings.language,
+      voiceEnabled: settings.voiceEnabled,
+    );
     setState(() {
       _isSpeaking = true;
     });
@@ -91,6 +96,8 @@ class HomeScreenState extends State<HomeScreen> {
   // Speak the name of the selected tab
   void _speakTab(String tabName) async {
     _stopSpeaking(); // Stop any ongoing TTS
+    final settings = context.read<SettingsProvider>().settings;
+    if (!settings.voiceEnabled) return;
     await flutterTts.speak("You're now in the $tabName.");
     setState(() {
       _isSpeaking = true;

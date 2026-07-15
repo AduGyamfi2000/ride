@@ -3,5 +3,24 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": []
+    "configurations": [
+        {
+            // Codespaces/devcontainers run on Linux, so "Windows (desktop)"
+            // is never a valid target here — it requires an actual Windows
+            // machine with MSVC/CMake. Chrome is the target that reliably
+            // works in a browser-based dev environment like this one.
+            "name": "ride (Chrome)",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "chrome",
+            "flutterMode": "debug"
+        },
+        {
+            "name": "ride (Chrome, profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "chrome",
+            "flutterMode": "profile"
+        }
+    ]
 }

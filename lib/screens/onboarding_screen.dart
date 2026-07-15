@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/settings_provider.dart';
+import '../services/voice_guide_service.dart';
 import '../auth/login_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
@@ -15,8 +15,6 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final FlutterTts _flutterTts = FlutterTts();
-
   @override
   void initState() {
     super.initState();
@@ -27,10 +25,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Future<void> _playGuide() async {
     final settings = context.read<SettingsProvider>().settings;
-    final text = settings.language == 'Twi'
-        ? 'Meda wo akwaaba. Smart Rural Ride boa wo ma wotumi ahwe kwan a eye den a wobɛ fa ako.'
-        : 'Welcome to Smart Rural Ride. Choose Passenger or Driver and begin your journey with simple taps and voice help.';
-    await _flutterTts.speak(text);
+    await VoiceGuideService().describePage(
+      pageKey: 'onboarding',
+      language: settings.language,
+      voiceEnabled: settings.voiceEnabled,
+    );
   }
 
   Future<void> _finishOnboarding(String role) async {
@@ -55,7 +54,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>().settings;
-    final title = settings.language == 'Twi' ? 'Smart Rural Ride' : 'Smart Rural Ride';
 
     return Scaffold(
       body: SafeArea(
@@ -64,29 +62,45 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.secondary,
+              const SizedBox(height: 12),
+              // Taxi logo — reuses the existing vehicle artwork so the
+              // very first thing a user sees ties directly to what the
+              // app does, instead of a generic placeholder icon.
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Image.asset('assets/images/taxi.png', height: 90),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 20),
+              Text(
+                settings.language == 'Twi' ? 'Akwaaba' : 'Welcome to Smart Rural Ride',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.secondary,
+                    ),
+              ),
+              const SizedBox(height: 8),
               Text(
                 settings.language == 'Twi'
-                    ? 'Mogye di wo ho. Yɛ boa wo ma woatumi ahwe kwan no yie.'
-                    : 'Easy ride booking for rural communities with large buttons, color cues, and voice guidance.',
+                    ? 'Yɛ boa wo ma woatumi ahwe kwan no yie wɔ akuraase.'
+                    : 'Book a ride in your community, in a few simple taps.',
+                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 24),
               _featureTile(Icons.touch_app, 'Large touch targets', 'Easy to tap even with limited reading experience.'),
-              _featureTile(Icons.volume_up, 'Voice guidance', 'Every step speaks clearly in English or Twi.'),
+              _featureTile(Icons.volume_up, 'Voice guidance', 'Every page tells you what it does and how to use it.'),
               _featureTile(Icons.location_on, 'Simple ride booking', 'Select vehicle, place, and time in a few taps.'),
               const Spacer(),
               AppButton(
-                label: settings.language == 'Twi' ? 'Fa yɛn nhwɛ' : 'Start Journey',
-                icon: Icons.emoji_people,
+                label: settings.language == 'Twi' ? 'Hyɛ Aseɛ' : 'Get Started',
+                icon: Icons.arrow_forward,
                 onPressed: () => _finishOnboarding('Passenger'),
               ),
               const SizedBox(height: 12),

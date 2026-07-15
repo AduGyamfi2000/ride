@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import 'map_location_picker_screen.dart';
 
@@ -13,8 +16,23 @@ class VehicleSelectionScreen extends StatefulWidget {
 class VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
   FlutterTts flutterTts = FlutterTts();
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'vehicle_selection',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
+  }
+
   // Function to play voice instruction
   _speak(String text) async {
+    final settings = context.read<SettingsProvider>().settings;
+    if (!settings.voiceEnabled) return;
     await flutterTts.speak(text);
   }
 

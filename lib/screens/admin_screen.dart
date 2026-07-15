@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/fare_service.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/ride_status_badge.dart';
@@ -23,6 +26,14 @@ class AdminScreenState extends State<AdminScreen> {
   void initState() {
     super.initState();
     _calculateSummaryStats(); // Calculate the stats when the screen is loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'admin_dashboard',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
   }
 
   // Fetch users from Firestore

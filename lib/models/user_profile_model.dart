@@ -15,6 +15,12 @@ class UserProfile {
   final String? carImageUrl;
   // Pending until an admin reviews the license/car photos.
   final String verificationStatus;
+  // True once the user has set an optional password (see
+  // lib/auth/synthetic_email.dart). The password itself is never stored
+  // here — Firebase Auth's email/password provider holds it securely;
+  // this flag just tells LoginScreen whether to offer password entry
+  // instead of OTP.
+  final bool hasPassword;
 
   UserProfile({
     required this.phone,
@@ -30,6 +36,7 @@ class UserProfile {
     this.licenseImageUrl,
     this.carImageUrl,
     this.verificationStatus = 'Pending',
+    this.hasPassword = false,
   });
 
   String get fullName =>
@@ -51,6 +58,7 @@ class UserProfile {
         'licenseImageUrl': licenseImageUrl,
         'carImageUrl': carImageUrl,
         'verificationStatus': verificationStatus,
+        'hasPassword': hasPassword,
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
@@ -67,5 +75,6 @@ class UserProfile {
         licenseImageUrl: json['licenseImageUrl'] as String?,
         carImageUrl: json['carImageUrl'] as String?,
         verificationStatus: json['verificationStatus'] as String? ?? 'Pending',
+        hasPassword: json['hasPassword'] as bool? ?? false,
       );
 }

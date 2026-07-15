@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile_model.dart';
+import '../providers/settings_provider.dart';
 import '../services/user_service.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/textfield.dart';
@@ -28,6 +31,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'profile',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
   }
 
   Future<void> _load() async {

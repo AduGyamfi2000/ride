@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/places_service.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import 'select_time_screen.dart';
@@ -47,6 +50,16 @@ class _MapLocationPickerScreenState extends State<MapLocationPickerScreen> {
   void initState() {
     super.initState();
     _determinePosition();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _describeCurrentStep());
+  }
+
+  void _describeCurrentStep() {
+    final settings = context.read<SettingsProvider>().settings;
+    VoiceGuideService().describePage(
+      pageKey: _selectingDropoff ? 'map_picker_dropoff' : 'map_picker_pickup',
+      language: settings.language,
+      voiceEnabled: settings.voiceEnabled,
+    );
   }
 
   Future<void> _determinePosition() async {
@@ -147,6 +160,7 @@ class _MapLocationPickerScreenState extends State<MapLocationPickerScreen> {
         return;
       }
       setState(() => _selectingDropoff = true);
+      _describeCurrentStep();
       return;
     }
 

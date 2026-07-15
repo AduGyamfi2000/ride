@@ -1,16 +1,21 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:ride/auth/signup_screen.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/otp_generator.dart';
+import '../auth/synthetic_email.dart';
 import '../models/pending_signup.dart';
 import '../models/user_profile_model.dart';
+import '../providers/settings_provider.dart';
 import '../services/user_service.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import 'driver_home_screen.dart';
 import 'home_screen.dart';
 import 'admin_screen.dart';
+import '../auth/signup_screen.dart';
 
 class PhoneOTPVerification extends StatefulWidget {
   final String phoneNumber;
@@ -41,6 +46,14 @@ class _PhoneOTPVerificationState extends State<PhoneOTPVerification> {
   void initState() {
     super.initState();
     _sendOtp();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'otp',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
   }
 
   @override
@@ -67,6 +80,30 @@ class _PhoneOTPVerificationState extends State<PhoneOTPVerification> {
         _errorMessage = 'Could not generate a code: $e';
         _isSending = false;
       });
+    }
+  }
+
+  /// If the user set a password on signup, upgrades the current anonymous
+  /// Firebase session to a real email/password account (linked, not a
+  /// separate sign-in) via a synthetic email derived from their phone
+  /// number — see lib/auth/synthetic_email.dart. Returns whether it
+  /// succeeded, which becomes the profile's hasPassword flag.
+  ///
+  /// Failing here (e.g. this phone already has a password account
+  /// somehow) doesn't block the rest of signup — they just keep using OTP
+  /// to log in, same as if they'd left the password field blank.
+  Future<bool> _maybeSetPassword(String? password) async {
+    if (password == null || password.isEmpty) return false;
+    try {
+      final credential = EmailAuthProvider.credential(
+        email: syntheticEmailForPhone(widget.phoneNumber),
+        password: password,
+      );
+      await FirebaseAuth.instance.currentUser!.linkWithCredential(credential);
+      return true;
+    } catch (e) {
+      log('Could not set password during signup (continuing without it): $e');
+      return false;
     }
   }
 
@@ -131,6 +168,7 @@ class _PhoneOTPVerificationState extends State<PhoneOTPVerification> {
           licenseImageUrl: licenseUrl,
           carImageUrl: carUrl,
           verificationStatus: pending.role == 'Driver' ? 'Pending' : 'Verified',
+          hasPassword: await _maybeSetPassword(pending.password),
         );
         await UserService.createOrUpdateUser(profile);
       } else {

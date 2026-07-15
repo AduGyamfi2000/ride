@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/settings_provider.dart';
 import '../services/user_service.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 import '../widgets/ride_status_badge.dart';
@@ -41,6 +42,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     super.initState();
     _loadMyProfile().then((_) => _watchAcceptedRides());
     _listenForRideOrders();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'driver_home',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
   }
 
   @override
@@ -156,6 +165,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
 
   // Notify the driver of a new ride order
   void _notifyDriver(Map<String, dynamic> rideData) async {
+    if (!mounted) return;
+    final settings = context.read<SettingsProvider>().settings;
+    if (!settings.voiceEnabled) return;
     final passengerName = rideData['passengerName'] ?? 'a passenger';
     final location = rideData['location'] ?? 'your selected location';
     String message = "New ride request from $passengerName at $location";

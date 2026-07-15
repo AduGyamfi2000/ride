@@ -8,6 +8,10 @@ class PendingSignup {
   final String firstName; // compulsory
   final String? lastName;
   final String? email;
+  // Optional — if set, this account gets a real (non-anonymous) Firebase
+  // Auth identity via email/password linking, and can skip OTP on future
+  // logins. See lib/auth/synthetic_email.dart.
+  final String? password;
 
   // Driver-only.
   final String? licenseNumber;
@@ -23,6 +27,7 @@ class PendingSignup {
     required this.firstName,
     this.lastName,
     this.email,
+    this.password,
     this.licenseNumber,
     this.carMake,
     this.carModel,

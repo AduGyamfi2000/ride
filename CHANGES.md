@@ -502,6 +502,88 @@ name + preset name, which — same caveat as everywhere else in this app's
 auth model — is a reasonable trade-off for a project without a backend,
 not a production-grade access control.
 
+## New: onboarding branding, optional password login, and page-by-page voice narration
+
+### Onboarding
+`lib/screens/onboarding_screen.dart` now leads with a taxi logo (reusing
+`assets/images/taxi.png` in a circular badge) plus a clear welcome message,
+and the passenger button now reads **"Get Started"** instead of "Start
+Journey".
+
+### Optional password login (skip OTP next time)
+Signup now has an optional password + confirm field. If set:
+
+- `lib/auth/synthetic_email.dart` (**new**) derives a synthetic, never-shown
+  "email" from the phone number (e.g. `p233241234567@ridehome.local`).
+- On successful OTP verification during signup, `lib/screens/otp_screen.dart`
+  links a real Firebase email/password credential to that synthetic email
+  onto the just-created anonymous session (`linkWithCredential`) — this
+  **upgrades the account off anonymous auth** for password users
+  specifically, which is a real (if partial) improvement to the
+  auth-security trade-off documented in `otp_generator.dart`/
+  `firestore.rules`: a password account now has a persistent Firebase
+  identity tied to real credentials, not just a device-local anonymous
+  session.
+- `UserProfile.hasPassword` (**new field**) records whether this succeeded.
+  No password or hash is ever stored in Firestore — Firebase Auth's own
+  infrastructure holds it securely, the same as any app using email/password
+  sign-in.
+- `lib/auth/login_screen.dart` (rewritten) — now two steps: enter phone
+  number → if that account has `hasPassword == true`, ask for the password
+  and sign in via `signInWithEmailAndPassword` (skipping OTP entirely); if
+  not, falls through to the OTP flow exactly as before. A "Forgot password?
+  Use a code instead" link is always available as a fallback.
+
+**Required Firebase Console step, same as Anonymous Auth earlier:** go to
+**Authentication → Sign-in method** and enable **Email/Password** — without
+it, setting a password on signup will fail (silently falling back to
+OTP-only for that account, since `_maybeSetPassword` doesn't block the rest
+of signup if linking fails).
+
+### Voice guidance on every page
+`lib/services/voice_guide_service.dart` (**new**) — a single service that
+narrates what each page/its key actions are for for, used consistently
+across onboarding, login, signup, OTP, home, vehicle selection, the map
+picker (separate narration for pickup vs. drop-off steps), select time,
+track ride, driver home, profile, settings, and the admin dashboard.
+
+- Respects the **Voice Guidance** toggle in Settings, which — worth
+  flagging — previously did nothing at all; every TTS call in the app
+  ignored it. All narration (new and pre-existing) now checks it.
+- `confirm_ride_screen.dart` and `driver_home_screen.dart`'s existing
+  dynamic announcements (ride details with live fare; "new ride request
+  from X") were kept as-is rather than replaced with generic page text —
+  they're more useful than boilerplate — just brought under the same
+  voiceEnabled check.
+- Fixed a real accuracy bug while in `home_screen.dart`: its old intro
+  said "the blue tab" / "the red tab", colors that haven't matched the
+  actual bottom nav since the app-wide color-consistency fix. Replaced
+  with the new service.
+
+**Built to be extended with real local-language recordings**, per your
+request:
+- `assets/audio/en/`, `assets/audio/twi/`, `assets/audio/ga/` (**new**,
+  registered in `pubspec.yaml`) — each has a README listing the exact
+  filenames expected (matching the `pageKey`s in `voice_guide_service.dart`,
+  e.g. `home.mp3`, `confirm_ride.mp3`).
+- `VoiceGuideService.describePage()` always tries a recording at
+  `assets/audio/<lang>/<pageKey>.mp3` **first**, and only falls back to
+  synthesized speech if none exists. **No code changes are needed to add a
+  recording** — just drop the file in, matching filename, and it's used
+  automatically.
+- "Ga" is already selectable in Settings' language dropdown, ready for
+  recordings even though no synthesized Ga translations are provided (see
+  below).
+- New dependency: `audioplayers: ^6.0.0`. Run `flutter pub get`.
+
+**One honesty note:** I don't speak Twi or Ga, so I only filled in Twi
+text where the app already had it (onboarding), and left every other
+`pageDescriptions` entry Twi/Ga-less rather than machine-guess a
+translation I can't verify — those currently fall back to the English text
+automatically. A native speaker filling in accurate strings in
+`voice_guide_service.dart` (or, better, just recording real audio per the
+above) would complete this properly.
+
 ## Known limitations still worth addressing later
 
 - The admin phone number is still a hardcoded string in `login_screen.dart`,

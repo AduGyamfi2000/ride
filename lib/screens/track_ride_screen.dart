@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
+import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ride_status_badge.dart';
 
@@ -17,6 +20,19 @@ class TrackRideScreen extends StatefulWidget {
 class _TrackRideScreenState extends State<TrackRideScreen> {
   GoogleMapController? _mapController;
   bool _hasFitBounds = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<SettingsProvider>().settings;
+      VoiceGuideService().describePage(
+        pageKey: 'track_ride',
+        language: settings.language,
+        voiceEnabled: settings.voiceEnabled,
+      );
+    });
+  }
 
   String _distanceLabel(double meters) =>
       meters < 1000 ? '${meters.round()} m away' : '${(meters / 1000).toStringAsFixed(1)} km away';

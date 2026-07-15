@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/voice_guide_service.dart';
 import 'profile_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -22,6 +23,13 @@ class SettingsScreenState extends State<SettingsScreen> {
     _selectedLanguage = settingsProvider.settings.language;
     _textSize = settingsProvider.settings.textSize;
     _voiceEnabled = settingsProvider.settings.voiceEnabled;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      VoiceGuideService().describePage(
+        pageKey: 'settings',
+        language: settingsProvider.settings.language,
+        voiceEnabled: settingsProvider.settings.voiceEnabled,
+      );
+    });
   }
 
   void _saveSettings() {
@@ -59,6 +67,7 @@ class SettingsScreenState extends State<SettingsScreen> {
               items: const [
                 DropdownMenuItem(value: 'English', child: Text('English')),
                 DropdownMenuItem(value: 'Twi', child: Text('Twi')),
+                DropdownMenuItem(value: 'Ga', child: Text('Ga')),
               ],
             ),
             const SizedBox(height: 20),
