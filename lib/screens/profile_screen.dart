@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../auth/synthetic_email.dart';
 import '../models/user_profile_model.dart';
 import '../providers/settings_provider.dart';
 import '../services/user_service.dart';
@@ -102,6 +103,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       licenseImageUrl: _profile!.licenseImageUrl,
       carImageUrl: _profile!.carImageUrl,
       verificationStatus: _profile!.verificationStatus,
+      hasPassword: _profile!.hasPassword,
+      ratingSum: _profile!.ratingSum,
+      ratingCount: _profile!.ratingCount,
     );
     try {
       await UserService.createOrUpdateUser(updated);
@@ -130,6 +134,211 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // LoginScreen on its own once we pop back to it.
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _updateHasPassword(bool value) async {
+    if (_profile == null) return;
+    final updated = UserProfile(
+      phone: _profile!.phone,
+      firstName: _profile!.firstName,
+      lastName: _profile!.lastName,
+      email: _profile!.email,
+      role: _profile!.role,
+      licenseNumber: _profile!.licenseNumber,
+      carMake: _profile!.carMake,
+      carModel: _profile!.carModel,
+      carPlateNumber: _profile!.carPlateNumber,
+      carColor: _profile!.carColor,
+      licenseImageUrl: _profile!.licenseImageUrl,
+      carImageUrl: _profile!.carImageUrl,
+      verificationStatus: _profile!.verificationStatus,
+      hasPassword: value,
+      ratingSum: _profile!.ratingSum,
+      ratingCount: _profile!.ratingCount,
+    );
+    await UserService.createOrUpdateUser(updated);
+    if (!mounted) return;
+    setState(() => _profile = updated);
+  }
+
+  /// Set a password for the first time — links a new email/password
+  /// credential to the current session, same mechanism used during
+  /// signup (see lib/auth/synthetic_email.dart).
+  Future<void> _showSetPasswordDialog() async {
+    final newPasswordController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? error;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Set a Password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Skip OTP next time you log in.', style: AppTextStyles.bodyMedium),
+              const SizedBox(height: 12),
+              TextField(
+                controller: newPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'New password (min 6 characters)'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: confirmController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Confirm password'),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!, style: const TextStyle(color: AppColors.error)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () async {
+                final pw = newPasswordController.text;
+                if (pw.length < 6) {
+                  setDialogState(() => error = 'Password must be at least 6 characters.');
+                  return;
+                }
+                if (pw != confirmController.text) {
+                  setDialogState(() => error = 'Passwords do not match.');
+                  return;
+                }
+                try {
+                  final credential = EmailAuthProvider.credential(
+                    email: syntheticEmailForPhone(_profile!.phone),
+                    password: pw,
+                  );
+                  await FirebaseAuth.instance.currentUser!.linkWithCredential(credential);
+                  await _updateHasPassword(true);
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(content: Text('Password set.')),
+                  );
+                } catch (e) {
+                  setDialogState(() => error = 'Could not set password: $e');
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Changes an existing password. Firebase requires a recent sign-in to
+  /// change a password, so this re-authenticates with the current
+  /// password first rather than assuming the session is fresh enough.
+  Future<void> _showChangePasswordDialog() async {
+    final currentController = TextEditingController();
+    final newController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? error;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Change Password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: currentController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Current password'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: newController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'New password (min 6 characters)'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: confirmController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Confirm new password'),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!, style: const TextStyle(color: AppColors.error)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () async {
+                final newPw = newController.text;
+                if (newPw.length < 6) {
+                  setDialogState(() => error = 'Password must be at least 6 characters.');
+                  return;
+                }
+                if (newPw != confirmController.text) {
+                  setDialogState(() => error = 'Passwords do not match.');
+                  return;
+                }
+                try {
+                  final email = syntheticEmailForPhone(_profile!.phone);
+                  final reauthCredential = EmailAuthProvider.credential(
+                    email: email,
+                    password: currentController.text,
+                  );
+                  await FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(reauthCredential);
+                  await FirebaseAuth.instance.currentUser!.updatePassword(newPw);
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(content: Text('Password changed.')),
+                  );
+                } on FirebaseAuthException catch (e) {
+                  setDialogState(() => error = e.code == 'invalid-credential' || e.code == 'wrong-password'
+                      ? 'Current password is incorrect.'
+                      : 'Could not change password: ${e.message}');
+                } catch (e) {
+                  setDialogState(() => error = 'Could not change password: $e');
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemovePassword() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Password'),
+        content: const Text("You'll need to use a code (OTP) to log in from now on. Continue?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await FirebaseAuth.instance.currentUser!.unlink(EmailAuthProvider.PROVIDER_ID);
+    } catch (e) {
+      // If unlink fails for any reason, still flip the flag below — the
+      // account will fall back to OTP either way from the user's
+      // perspective, since LoginScreen only checks hasPassword.
+    }
+    await _updateHasPassword(false);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password removed.')));
   }
 
   @override
@@ -210,7 +419,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
             const SizedBox(height: 24),
             AppButton(label: 'Save', isLoading: _saving, onPressed: _saving ? null : _save),
+            const SizedBox(height: 24),
+            const Divider(),
             const SizedBox(height: 12),
+            const Text('Password', style: AppTextStyles.headlineMedium),
+            const SizedBox(height: 8),
+            Text(
+              _profile!.hasPassword
+                  ? 'A password is set — you can log in with it instead of a code.'
+                  : "No password set — you'll always use a code (OTP) to log in.",
+              style: AppTextStyles.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            if (_profile!.hasPassword) ...[
+              AppButton(
+                label: 'Change Password',
+                variant: AppButtonVariant.outlined,
+                isLarge: false,
+                onPressed: _showChangePasswordDialog,
+              ),
+              const SizedBox(height: 8),
+              AppButton(
+                label: 'Remove Password',
+                variant: AppButtonVariant.danger,
+                isLarge: false,
+                onPressed: _confirmRemovePassword,
+              ),
+            ] else
+              AppButton(
+                label: 'Set a Password',
+                variant: AppButtonVariant.outlined,
+                isLarge: false,
+                onPressed: _showSetPasswordDialog,
+              ),
+            const SizedBox(height: 24),
             AppButton(label: 'Sign Out', variant: AppButtonVariant.outlined, onPressed: _signOut),
           ],
         ),

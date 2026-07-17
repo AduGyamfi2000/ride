@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:ride/auth/signup_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/otp_generator.dart';
 import '../auth/synthetic_email.dart';
@@ -15,7 +16,6 @@ import '../widgets/app_button.dart';
 import 'driver_home_screen.dart';
 import 'home_screen.dart';
 import 'admin_screen.dart';
-import '../auth/signup_screen.dart';
 
 class PhoneOTPVerification extends StatefulWidget {
   final String phoneNumber;

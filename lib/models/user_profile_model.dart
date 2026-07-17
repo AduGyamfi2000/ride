@@ -21,6 +21,12 @@ class UserProfile {
   // this flag just tells LoginScreen whether to offer password entry
   // instead of OTP.
   final bool hasPassword;
+  // Driver rating aggregate — kept as a running sum + count (rather than
+  // storing every individual rating here) so the average can be updated
+  // with a single atomic Firestore increment per new rating, no need to
+  // read-modify-write the whole list. See lib/services/rating_service.dart.
+  final int ratingSum;
+  final int ratingCount;
 
   UserProfile({
     required this.phone,
@@ -37,12 +43,18 @@ class UserProfile {
     this.carImageUrl,
     this.verificationStatus = 'Pending',
     this.hasPassword = false,
+    this.ratingSum = 0,
+    this.ratingCount = 0,
   });
 
   String get fullName =>
       (lastName != null && lastName!.trim().isNotEmpty) ? '$firstName $lastName' : firstName;
 
   bool get isDriver => role == 'Driver';
+
+  // Null when the driver has no ratings yet, rather than showing "0.0
+  // stars" which would misleadingly look like a bad rating.
+  double? get averageRating => ratingCount == 0 ? null : ratingSum / ratingCount;
 
   Map<String, dynamic> toJson() => {
         'phone': phone,
@@ -59,6 +71,8 @@ class UserProfile {
         'carImageUrl': carImageUrl,
         'verificationStatus': verificationStatus,
         'hasPassword': hasPassword,
+        'ratingSum': ratingSum,
+        'ratingCount': ratingCount,
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
@@ -76,5 +90,7 @@ class UserProfile {
         carImageUrl: json['carImageUrl'] as String?,
         verificationStatus: json['verificationStatus'] as String? ?? 'Pending',
         hasPassword: json['hasPassword'] as bool? ?? false,
+        ratingSum: (json['ratingSum'] as num?)?.toInt() ?? 0,
+        ratingCount: (json['ratingCount'] as num?)?.toInt() ?? 0,
       );
 }

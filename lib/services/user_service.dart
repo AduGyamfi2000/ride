@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import '../core/api_keys.dart';
 import '../models/user_profile_model.dart';
 
@@ -20,6 +20,17 @@ class UserService {
         .set(profile.toJson(), SetOptions(merge: true));
   }
 
+  /// Saves this device's push-notification token onto the user's profile,
+  /// so a future Cloud Function (see push_notification_service.dart) could
+  /// target it, or so it can be copied into Firebase Console's "Send test
+  /// message" tool for a manual demo in the meantime.
+  static Future<void> updateFcmToken(String phone, String token) async {
+    await _firestore.collection('users').doc(_docIdFor(phone)).set(
+      {'fcmToken': token},
+      SetOptions(merge: true),
+    );
+  }
+
   static Future<UserProfile?> fetchByPhone(String phone) async {
     final doc = await _firestore.collection('users').doc(_docIdFor(phone)).get();
     if (!doc.exists) return null;
@@ -36,24 +47,33 @@ class UserService {
   /// returns is what still gets stored in the Firestore user document
   /// (licenseImageUrl/carImageUrl), same as before.
   ///
+  /// Takes an XFile (image_picker's cross-platform file type) and reads it
+  /// as bytes rather than using dart:io's File + MultipartFile.fromPath —
+  /// fromPath relies on dart:io's filesystem access, which doesn't exist
+  /// on Flutter Web at all ("Unsupported operation: MultipartFile is only
+  /// supported where dart:io is available"). fromBytes works identically
+  /// on every platform, web included.
+  ///
   /// Before this works you need a free Cloudinary account with an
   /// "unsigned" upload preset — see CHANGES.md for the exact steps — and
   /// to fill in ApiKeys.cloudinaryCloudName / cloudinaryUploadPreset.
   static Future<String> uploadDriverDocument({
     required String phone,
-    required File file,
+    required XFile file,
     required String label, // 'license' or 'car'
   }) async {
     final uri = Uri.parse(
       'https://api.cloudinary.com/v1_1/${ApiKeys.cloudinaryCloudName}/image/upload',
     );
 
+    final bytes = await file.readAsBytes();
+
     final request = http.MultipartRequest('POST', uri)
       ..fields['upload_preset'] = ApiKeys.cloudinaryUploadPreset
       // Overwrites any previous photo for this driver/label combo instead
       // of accumulating a new file on every re-upload.
       ..fields['public_id'] = 'driver_documents/${_docIdFor(phone)}_$label'
-      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: file.name));
 
     final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
     final response = await http.Response.fromStream(streamedResponse);

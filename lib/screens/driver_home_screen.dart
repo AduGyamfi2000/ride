@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/settings_provider.dart';
+import '../services/push_notification_service.dart';
 import '../services/user_service.dart';
 import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
@@ -31,10 +34,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
 
   String? _myPhone;
   String _myName = 'Driver';
+  double? _myRating;
 
   StreamSubscription<QuerySnapshot>? _rideOrdersSub;
   StreamSubscription<QuerySnapshot>? _acceptedRidesSub;
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<RemoteMessage>? _pushSub;
   List<String> _acceptedRideIds = [];
 
   @override
@@ -57,8 +62,33 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     _rideOrdersSub?.cancel();
     _acceptedRidesSub?.cancel();
     _positionSub?.cancel();
+    _pushSub?.cancel();
     flutterTts.stop();
     super.dispose();
+  }
+
+  /// Requests notification permission, saves this device's FCM token so
+  /// it's available for a manual test send (or a future Cloud Function —
+  /// see push_notification_service.dart for why that part isn't built),
+  /// and shows a SnackBar for any message that arrives while this screen
+  /// is open in the foreground.
+  Future<void> _setUpPushNotifications(String phone) async {
+    final token = await PushNotificationService.initAndGetToken();
+    if (token != null) {
+      try {
+        await UserService.updateFcmToken(phone, token);
+      } catch (e) {
+        log('Could not save FCM token: $e');
+      }
+    }
+    _pushSub = PushNotificationService.listenForegroundMessages((message) {
+      if (!mounted) return;
+      final title = message.notification?.title ?? 'New notification';
+      final body = message.notification?.body ?? '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(body.isNotEmpty ? '$title: $body' : title)),
+      );
+    });
   }
 
   Future<void> _loadMyProfile() async {
@@ -71,23 +101,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     try {
       final profile = await UserService.fetchByPhone(phone);
       if (!mounted) return;
-      setState(() => _myName = profile?.fullName ?? 'Driver');
+      setState(() {
+        _myName = profile?.fullName ?? 'Driver';
+        _myRating = profile?.averageRating;
+      });
+      _setUpPushNotifications(phone);
     } catch (e) {
       // Non-critical for accepting/completing rides — just keep the
       // 'Driver' fallback name rather than surfacing an error for this.
     }
   }
 
-  /// Watches this driver's currently-accepted rides and starts/stops
-  /// broadcasting live location accordingly — only while at least one
-  /// accepted ride is in progress, so we're not burning battery/writes
-  /// for a driver who isn't actively on a trip.
+  /// Watches this driver's rides currently in progress (accepted through
+  /// arrived — not just 'Accepted') and starts/stops broadcasting live
+  /// location accordingly, so passengers keep seeing the driver move
+  /// during on_the_way/arrived too, not just right after accepting.
   void _watchAcceptedRides() {
     if (_myPhone == null) return;
     _acceptedRidesSub = FirebaseFirestore.instance
         .collection('rideRequests')
         .where('driverPhone', isEqualTo: _myPhone)
-        .where('status', isEqualTo: 'Accepted')
+        .where('status', whereIn: ['Accepted', 'on_the_way', 'arrived'])
         .snapshots()
         .listen((snapshot) {
       _acceptedRideIds = snapshot.docs.map((d) => d.id).toList();
@@ -212,6 +246,37 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
+  Future<void> _callPassenger(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the phone dialer on this device.')),
+      );
+    }
+  }
+
+  Future<void> _startTrip(String rideId) async {
+    await FirebaseFirestore.instance.collection('rideRequests').doc(rideId).update({
+      'status': 'on_the_way',
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Trip started.')),
+    );
+  }
+
+  Future<void> _markArrived(String rideId) async {
+    await FirebaseFirestore.instance.collection('rideRequests').doc(rideId).update({
+      'status': 'arrived',
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Marked as arrived.')),
+    );
+  }
+
   Future<void> _completeRide(String rideId) async {
     await FirebaseFirestore.instance.collection('rideRequests').doc(rideId).update({
       'status': 'Completed',
@@ -235,9 +300,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Welcome, $_myName',
-                style: TextStyle(fontSize: settingsProvider.settings.textSize, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  Text(
+                    'Welcome, $_myName',
+                    style: TextStyle(fontSize: settingsProvider.settings.textSize, fontWeight: FontWeight.bold),
+                  ),
+                  if (_myRating != null) ...[
+                    const SizedBox(width: 8),
+                    Icon(Icons.star, color: AppColors.primary, size: settingsProvider.settings.textSize),
+                    const SizedBox(width: 2),
+                    Text(
+                      _myRating!.toStringAsFixed(1),
+                      style: TextStyle(fontSize: settingsProvider.settings.textSize - 2, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -271,9 +349,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                       return status == 'Searching' || status == 'Scheduled';
                     }).toList();
 
+                    const inProgressStatuses = ['Accepted', 'on_the_way', 'arrived'];
                     final myRides = allRides.where((d) {
                       final data = d.data() as Map<String, dynamic>;
-                      return data['status'] == 'Accepted' && data['driverPhone'] == _myPhone;
+                      return inProgressStatuses.contains(data['status']) && data['driverPhone'] == _myPhone;
                     }).toList();
 
                     if (newRequests.isEmpty && myRides.isEmpty) {
@@ -283,18 +362,47 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                     return ListView(
                       children: [
                         if (myRides.isNotEmpty) ...[
-                          const SectionHeader(title: 'My Accepted Rides'),
+                          const SectionHeader(title: 'My Rides In Progress'),
                           const SizedBox(height: 8),
-                          ...myRides.map((d) => _RideCard(
-                                data: d.data() as Map<String, dynamic>,
-                                textSize: settingsProvider.settings.textSize,
-                                trailing: AppButton(
+                          ...myRides.map((d) {
+                            final rideData = d.data() as Map<String, dynamic>;
+                            final status = rideData['status'] as String?;
+                            final Widget trailing;
+                            switch (status) {
+                              case 'Accepted':
+                                trailing = AppButton(
+                                  label: 'Start Trip',
+                                  isLarge: false,
+                                  onPressed: () => _startTrip(d.id),
+                                );
+                                break;
+                              case 'on_the_way':
+                                trailing = AppButton(
+                                  label: 'Mark Arrived',
+                                  isLarge: false,
+                                  onPressed: () => _markArrived(d.id),
+                                );
+                                break;
+                              case 'arrived':
+                                trailing = AppButton(
                                   label: 'Complete',
                                   isLarge: false,
                                   variant: AppButtonVariant.secondary,
                                   onPressed: () => _completeRide(d.id),
-                                ),
-                              )),
+                                );
+                                break;
+                              default:
+                                trailing = const SizedBox.shrink();
+                            }
+                            return _RideCard(
+                              data: rideData,
+                              textSize: settingsProvider.settings.textSize,
+                              trailing: trailing,
+                              onCallPassenger: rideData['passengerPhone'] != null
+                                  ? () => _callPassenger(rideData['passengerPhone'] as String)
+                                  : null,
+                            );
+                          }),
                           const SizedBox(height: 20),
                         ],
                         SectionHeader(title: 'New Requests (${newRequests.length})'),
@@ -331,8 +439,12 @@ class _RideCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final double textSize;
   final Widget trailing;
+  // Only passed for in-progress rides (accepted through arrived) — a
+  // driver shouldn't be calling a passenger whose request they haven't
+  // accepted yet.
+  final VoidCallback? onCallPassenger;
 
-  const _RideCard({required this.data, required this.textSize, required this.trailing});
+  const _RideCard({required this.data, required this.textSize, required this.trailing, this.onCallPassenger});
 
   @override
   Widget build(BuildContext context) {
@@ -348,12 +460,24 @@ class _RideCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        "${data['passengerName'] ?? 'Passenger'}",
-                        style: TextStyle(fontSize: textSize, fontWeight: FontWeight.bold),
+                      Expanded(
+                        child: Text(
+                          "${data['passengerName'] ?? 'Passenger'}",
+                          style: TextStyle(fontSize: textSize, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       RideStatusBadge(status: data['status'] as String? ?? 'Searching'),
+                      if (onCallPassenger != null)
+                        IconButton(
+                          icon: const Icon(Icons.call, color: AppColors.success),
+                          tooltip: 'Call passenger',
+                          onPressed: onCallPassenger,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          visualDensity: VisualDensity.compact,
+                        ),
                     ],
                   ),
                   const SizedBox(height: 4),

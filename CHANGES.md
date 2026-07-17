@@ -584,6 +584,168 @@ automatically. A native speaker filling in accurate strings in
 `voice_guide_service.dart` (or, better, just recording real audio per the
 above) would complete this properly.
 
+## Fixes: driver photo upload crashing on web, and a logout-on-navigate bug
+
+- **"Unsupported operation: MultipartFile is only supported where dart:io
+  is available"** — the driver signup flow used `dart:io`'s `File` to hold
+  picked license/car photos, and `http.MultipartFile.fromPath()` to upload
+  them. Neither works on Flutter Web at all — there's no real filesystem
+  path behind a picked image on web (`dart:io` doesn't exist there), only
+  a blob reference. Fixed by switching to image_picker's cross-platform
+  `XFile` throughout (`lib/models/pending_signup.dart`,
+  `lib/auth/signup_screen.dart`) and reading it as bytes instead of a path
+  in `lib/services/user_service.dart`'s `uploadDriverDocument()`
+  (`http.MultipartFile.fromBytes` instead of `.fromPath`) — this works
+  identically on Android, iOS, and web.
+
+- **Confirming a ride appeared to log the passenger out.** Root cause:
+  `lib/screens/auth_gate_screen.dart` called
+  `FirebaseAuth.instance.authStateChanges()` directly inside `build()`.
+  Every call to `authStateChanges()` returns a *new* `Stream` instance —
+  even though it logically represents the same ongoing auth state.
+  `StreamBuilder` treats a new stream instance as something to
+  re-subscribe to from scratch, resetting to "waiting" (and transiently
+  `user == null`) until the new subscription's first event arrives. Any
+  rebuild of this screen — and `ConfirmRideScreen`'s
+  `Navigator.popUntil(context, (route) => route.isFirst)` after booking
+  lands squarely back on it — could trigger exactly this, reading as "got
+  logged out". Fixed by creating the stream once as a field instead of
+  calling `authStateChanges()` fresh on every build.
+
+## The "what else can make the app better" round (items #1-8)
+
+### #1 — Real backend for security: recommendation only, not built
+This needed a Cloud Function (verify OTP server-side, mint a custom
+Firebase token) to properly close the anonymous-auth gap documented
+throughout this project. Cloud Functions require Firebase's paid Blaze
+plan to enable at all — same requirement that ruled out Firebase Storage
+earlier. Rather than build code you can't deploy, this stays as a
+documented recommendation: it's genuinely the strongest "future work" item
+for a report, and now that password accounts exist (see below), it's a
+natural next step to unify around.
+
+### #2 — Multiple ongoing rides (real bug fix)
+`RideProvider` held a single `Ride?` slot. Once scheduling existed, booking
+a second ride (one now, one for later) silently overwrote the first in the
+UI — Firestore still had both documents, but Home could only ever show
+one. Rewritten to hold a `List<Ride>` (`lib/providers/ride_provider.dart`):
+`addOngoingRide`, `completeRide(ride)`, `cancelRide(ride)` all operate on a
+specific ride now rather than "the" ride. `home_screen.dart` renders a tile
+per ongoing ride instead of one. Covered by `test/ride_provider_test.dart`,
+including a test specifically guarding against the original bug.
+
+### #3 — Driver ratings
+- `UserProfile` gained `ratingSum`/`ratingCount` (a running total, not a
+  stored list — one atomic increment per rating instead of read-modify-
+  write) and an `averageRating` getter (null, not 0.0, when unrated).
+- `lib/services/rating_service.dart` (**new**) — `submitRating()` records
+  the score on the ride (so it's never asked for twice) and folds it into
+  the driver's aggregate, both inside one Firestore transaction.
+- `home_screen.dart` now detects when an ongoing ride's live status flips
+  to `Completed`, moves it to history via the new `RideProvider.completeRide`,
+  and — if there was a driver and no rating yet — shows a simple 5-star
+  dialog. Skippable, no nagging/retry.
+- The average now displays next to the driver's name on
+  `driver_home_screen.dart` (their own) and `track_ride_screen.dart` (the
+  passenger sees it while tracking).
+
+### #4 — SOS / emergency button
+`track_ride_screen.dart` has a persistent red SOS floating button. Tapping
+it offers two `url_launcher`-backed actions: call Ghana's emergency number
+(112, change the constant if deploying elsewhere) via the phone dialer, or
+open a pre-filled SMS with a Google Maps link to the driver's last known
+location, letting the passenger pick who to send it to. New dependency:
+`url_launcher: ^6.3.0`.
+
+### #5 — Password management in Profile
+Signup could only *set* a password, never change or remove one.
+`profile_screen.dart` now has a Password section:
+- **Set** (if none): links a new email/password credential, same mechanism
+  as signup.
+- **Change** (if one exists): re-authenticates with the current password
+  first (Firebase requires a recent sign-in to change a password — this
+  avoids a `requires-recent-login` error on an older session), then updates.
+- **Remove**: unlinks the email/password credential and flips `hasPassword`
+  back to false, so `LoginScreen` falls back to OTP for that account again.
+
+### #6 — Push notifications: receiving side built, sending side needs Blaze
+Same billing wall as #1. `lib/services/push_notification_service.dart`
+(**new**, `firebase_messaging: ^14.9.4`) requests permission, retrieves
+this device's FCM token, and lets a screen listen for foreground messages
+— all free, all built, wired into `driver_home_screen.dart` (token saved
+to the driver's profile via `UserService.updateFcmToken`, foreground
+messages shown as a SnackBar). **Actually triggering** a notification
+automatically (the moment a matching ride appears) needs something
+server-side watching Firestore and calling the FCM API — a Cloud Function,
+requiring Blaze. Until that's in place, notifications can be sent manually
+via Firebase Console → Cloud Messaging → "Send test message" using the
+token saved on the driver's profile — enough to demonstrate the receiving
+side genuinely works, just not automatically. Also added the Android 13+
+`POST_NOTIFICATIONS` permission.
+
+### #7 — Automated tests
+Three new test files, all pure-logic (no Firebase mocking needed):
+`test/ride_provider_test.dart`, `test/fare_service_test.dart`,
+`test/user_profile_model_test.dart`. `OtpService` and the Firestore-backed
+services weren't included — they'd need Firebase emulator or mocking
+infrastructure this project doesn't have yet, which is a reasonable next
+step if you want to extend coverage further.
+
+### #8 — Polish
+- `home_screen.dart`'s "Reset Ride History" now shows a confirmation dialog
+  before wiping history, instead of firing immediately on tap.
+- The raw `DateTime.toString()` display issue was already fixed at the
+  source back in the fare-estimation round (`confirm_ride_screen.dart` uses
+  `DateFormat('EEE, MMM d • h:mm a')` before ever storing the ride time as
+  a string) — double-checked and confirmed still correct, nothing left to
+  do here.
+- Loading skeletons were considered but left out — the existing spinner
+  states already have real content, and this seemed like a poor time
+  trade-off versus everything else on the list.
+
+## Second "make it better" round, item #1: using the ride-progress states that already existed
+
+`RideStatusBadge` already had colors/labels defined for `on_the_way` and
+`arrived`, but nothing in the app ever set those statuses — a ride jumped
+straight from `Accepted` to `Completed`.
+
+- `driver_home_screen.dart` — "My Accepted Rides" is now "My Rides In
+  Progress", and shows the right action button per status: **Start Trip**
+  (Accepted → on_the_way), **Mark Arrived** (on_the_way → arrived), then
+  **Complete** (arrived → Completed). The accepted-rides query and location
+  broadcast now cover all three in-progress statuses instead of stopping
+  after "Accepted", so the passenger keeps seeing the driver move for the
+  whole trip. The existing composite index (`driverPhone` + `status`)
+  already covers the `whereIn` version of this query — no index changes
+  needed.
+- `track_ride_screen.dart` — shows a distinct "Your driver has arrived at
+  the pickup point!" callout when status is `arrived`, instead of falling
+  through to the generic distance text.
+- `home_screen.dart` — the ongoing-ride tile is now tappable-to-track for
+  the whole in-progress lifecycle (previously only while status was
+  exactly `Accepted`).
+
+## Third "make it better" round, item #2: call driver / call passenger
+
+Previously only the driver's phone number was ever stored on a ride
+document — there was no way for a driver to call the passenger, and no
+"Call Driver" button existed for the passenger either.
+
+- `lib/models/ride_model.dart` — added `passengerPhone`.
+- `lib/screens/confirm_ride_screen.dart` — the passenger's phone (already
+  being read from `SharedPreferences` to resolve their name) is now also
+  stored on the ride, for both the online and offline booking paths.
+- `lib/screens/track_ride_screen.dart` — a **Call Driver** button now sits
+  next to the driver's name, next to their rating. Hidden once the ride is
+  `Completed`/`Cancelled`.
+- `lib/screens/driver_home_screen.dart` — a **Call Passenger** icon sits
+  next to the passenger's name on "My Rides In Progress" cards, using the
+  ride's stored `passengerPhone`. Deliberately **not** shown on "New
+  Requests" — a driver shouldn't be calling someone whose ride they
+  haven't accepted yet.
+- Both reuse the same `tel:` URI approach already built for the SOS button
+  (`url_launcher`, already a dependency — no new package needed).
+
 ## Known limitations still worth addressing later
 
 - The admin phone number is still a hardcoded string in `login_screen.dart`,

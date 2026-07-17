@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/ride_model.dart';
 import '../providers/ride_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/offline_sync_service.dart';
 import '../services/fare_service.dart';
+import '../services/rating_service.dart';
 import '../services/user_service.dart';
 import '../services/voice_guide_service.dart';
 import '../theme/app_theme.dart';
@@ -224,8 +226,13 @@ class HomeScreenState extends State<HomeScreen> {
               });
             },
           ),
-          if (_isOngoingExpanded && rideProvider.ongoingRide != null) ...[
-            _buildOngoingRideTile(rideProvider, settingsProvider),
+          if (_isOngoingExpanded && rideProvider.ongoingRides.isNotEmpty) ...[
+            ...rideProvider.ongoingRides.map(
+              (ride) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _buildOngoingRideTile(ride, rideProvider, settingsProvider),
+              ),
+            ),
           ] else if (_isOngoingExpanded) ...[
             const Center(
               child: Text("No ongoing rides.", style: TextStyle(color: AppColors.textHint)),
@@ -288,7 +295,7 @@ class HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 12),
             AppButton(
               label: 'Reset Ride History',
-              onPressed: rideProvider.resetHistory,
+              onPressed: () => _confirmResetHistory(rideProvider),
               variant: AppButtonVariant.danger,
               isLarge: false,
             ),
@@ -302,12 +309,11 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Shows the ongoing ride's live status/driver info, streamed straight
+  // Shows one ongoing ride's live status/driver info, streamed straight
   // from Firestore when we have a ride id (created while online, or
   // already synced from the offline queue). Falls back to the static
   // locally-held ride if there's no id yet (e.g. just booked offline).
-  Widget _buildOngoingRideTile(RideProvider rideProvider, SettingsProvider settingsProvider) {
-    final localRide = rideProvider.ongoingRide!;
+  Widget _buildOngoingRideTile(Ride localRide, RideProvider rideProvider, SettingsProvider settingsProvider) {
     if (localRide.id == null) {
       return ListTile(
         title: Text("${localRide.vehicleName} - ${localRide.location}",
@@ -317,7 +323,7 @@ class HomeScreenState extends State<HomeScreen> {
         leading: RideStatusBadge(status: localRide.status),
         trailing: IconButton(
           icon: const Icon(Icons.cancel, color: AppColors.error),
-          onPressed: () => _showCancelConfirmationDialog(rideProvider),
+          onPressed: () => _showCancelConfirmationDialog(localRide, rideProvider),
         ),
       );
     }
@@ -328,9 +334,28 @@ class HomeScreenState extends State<HomeScreen> {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final status = data?['status'] as String? ?? localRide.status;
         final driverName = data?['driverName'] as String?;
+        final driverPhone = data?['driverPhone'] as String?;
+        final hasBeenRated = data?['driverRating'] != null;
+
+        // Once a ride is completed, it belongs in history, not the
+        // ongoing list — move it over (once) and prompt for a rating if
+        // there was a driver and it hasn't been rated yet.
+        if (status == 'Completed' && rideProvider.ongoingRides.any((r) => r.id == localRide.id)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            rideProvider.completeRide(localRide);
+            if (driverPhone != null && !hasBeenRated) {
+              _showRatingDialog(localRide, driverPhone, driverName ?? 'your driver');
+            }
+          });
+        }
+
+        // Trackable for the whole in-progress lifecycle now that drivers
+        // actually move through on_the_way/arrived, not just Accepted.
+        final isTrackable = ['Accepted', 'on_the_way', 'arrived'].contains(status);
 
         return ListTile(
-          onTap: status == 'Accepted'
+          onTap: isTrackable
               ? () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => TrackRideScreen(rideId: localRide.id!)),
@@ -343,7 +368,7 @@ class HomeScreenState extends State<HomeScreen> {
               "Time: ${localRide.rideTime ?? 'Now'}",
               if (localRide.estimatedFareGhs != null) FareService.formatGhs(localRide.estimatedFareGhs!),
               if (driverName != null) "Driver: $driverName",
-              if (status == 'Accepted') 'Tap to track',
+              if (isTrackable) 'Tap to track',
             ].join(' • '),
             style: TextStyle(fontSize: settingsProvider.settings.textSize),
           ),
@@ -352,21 +377,41 @@ class HomeScreenState extends State<HomeScreen> {
               ? null
               : IconButton(
                   icon: const Icon(Icons.cancel, color: AppColors.error),
-                  onPressed: () => _showCancelConfirmationDialog(rideProvider),
+                  onPressed: () => _showCancelConfirmationDialog(localRide, rideProvider),
                 ),
         );
       },
     );
   }
 
-  void _showCancelConfirmationDialog(RideProvider rideProvider) {
+  void _confirmResetHistory(RideProvider rideProvider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset Ride History'),
+        content: const Text('This will permanently delete all of your past ride records. Continue?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              rideProvider.resetHistory();
+              Navigator.pop(context);
+            },
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCancelConfirmationDialog(Ride ride, RideProvider rideProvider) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Cancel Ride'),
           content:
-              const Text('Are you sure you want to cancel the ongoing ride?'),
+              const Text('Are you sure you want to cancel this ride?'),
           actions: [
             TextButton(
               onPressed: () {
@@ -377,7 +422,7 @@ class HomeScreenState extends State<HomeScreen> {
             ),
             TextButton(
               onPressed: () async {
-                final rideId = rideProvider.ongoingRide?.id;
+                final rideId = ride.id;
                 if (rideId != null) {
                   // Best-effort: also reflect the cancellation in
                   // Firestore so the driver's list and admin dashboard
@@ -392,7 +437,7 @@ class HomeScreenState extends State<HomeScreen> {
                     // Ignore — local cancellation still proceeds.
                   }
                 }
-                rideProvider.cancelOngoingRide(); // Confirm cancellation
+                rideProvider.cancelRide(ride); // Confirm cancellation
                 if (context.mounted) {
                   Navigator.of(context).pop(); // Close the dialog
                 }
@@ -400,6 +445,63 @@ class HomeScreenState extends State<HomeScreen> {
               child: const Text('Yes'),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  // Prompts the passenger to rate their driver once a ride completes.
+  // Purely optional — dismissing without picking a star just skips it,
+  // there's no way to force a rating and no retry nagging.
+  void _showRatingDialog(Ride ride, String driverPhone, String driverName) {
+    int selectedStars = 5;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Rate $driverName'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('How was your ride?'),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(5, (i) {
+                      final starIndex = i + 1;
+                      return IconButton(
+                        icon: Icon(
+                          starIndex <= selectedStars ? Icons.star : Icons.star_border,
+                          color: AppColors.primary,
+                          size: 32,
+                        ),
+                        onPressed: () => setDialogState(() => selectedStars = starIndex),
+                      );
+                    }),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Skip'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await RatingService.submitRating(
+                      rideId: ride.id!,
+                      driverPhone: driverPhone,
+                      stars: selectedStars,
+                    );
+                  },
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -35,8 +34,8 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController _carColorController = TextEditingController();
 
   String _selectedRole = 'Passenger';
-  File? _licenseImage;
-  File? _carImage;
+  XFile? _licenseImage;
+  XFile? _carImage;
   String? _errorMessage;
 
   @override
@@ -74,9 +73,9 @@ class _SignupScreenState extends State<SignupScreen> {
     if (picked == null) return;
     setState(() {
       if (isLicense) {
-        _licenseImage = File(picked.path);
+        _licenseImage = picked;
       } else {
-        _carImage = File(picked.path);
+        _carImage = picked;
       }
     });
   }
@@ -345,7 +344,7 @@ class _RoleChip extends StatelessWidget {
 
 class _DocumentPicker extends StatelessWidget {
   final String label;
-  final File? file;
+  final XFile? file;
   final VoidCallback onTap;
 
   const _DocumentPicker({required this.label, required this.file, required this.onTap});

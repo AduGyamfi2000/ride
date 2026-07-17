@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -79,7 +80,7 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
     final settings = context.read<SettingsProvider>().settings;
     if (!settings.voiceEnabled) return;
     String rideTime =
-        widget.rideTime == null ? "now" : "on ${widget.rideTime?.toString()}";
+        widget.rideTime == null ? "now" : "on ${DateFormat('EEE, MMM d, h:mm a').format(widget.rideTime!)}";
     final fare = _estimatedFare;
     String fareText = fare != null ? " Estimated fare is ${FareService.formatGhs(fare)}." : "";
     String rideDetails =
@@ -112,7 +113,8 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
     }
 
     // Convert DateTime? to String
-    String? rideTimeString = widget.rideTime?.toString();
+    String? rideTimeString =
+        widget.rideTime == null ? null : DateFormat('EEE, MMM d • h:mm a').format(widget.rideTime!);
 
     // Anonymous Firebase users never have a displayName, so this used to
     // always write "Passenger" regardless of who actually booked — look
@@ -123,9 +125,10 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
     // shouldn't crash the whole booking flow before we even reach the
     // try/catch below — just fall back to a generic label.
     String passengerName = 'Passenger';
+    String? myPhone;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final myPhone = prefs.getString('userPhone');
+      myPhone = prefs.getString('userPhone');
       final myProfile = myPhone != null ? await UserService.fetchByPhone(myPhone) : null;
       if (myProfile?.firstName != null) passengerName = myProfile!.firstName;
     } catch (e) {
@@ -165,9 +168,10 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
       estimatedFareGhs: estimatedFare,
       status: rideStatus,
       passengerName: passengerName,
+      passengerPhone: myPhone,
     );
 
-    Provider.of<RideProvider>(context, listen: false).setOngoingRide(ride);
+    Provider.of<RideProvider>(context, listen: false).addOngoingRide(ride);
 
     final connectivityResult = await Connectivity().checkConnectivity();
     final isOnline = connectivityResult != ConnectivityResult.none;
@@ -200,6 +204,7 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
         'dropoffLocation': widget.dropoffLocation ?? widget.location,
         'rideTime': rideTimeString ?? 'Now',
         'passengerName': passengerName,
+        'passengerPhone': myPhone,
         'pickupLat': widget.pickupLat,
         'pickupLng': widget.pickupLng,
         'dropoffLat': widget.dropoffLat,
@@ -274,7 +279,7 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
                     const Divider(height: 24),
                     _rideDetailRow(
                       'Time',
-                      widget.rideTime == null ? 'Now' : widget.rideTime.toString(),
+                      widget.rideTime == null ? 'Now' : DateFormat('EEE, MMM d • h:mm a').format(widget.rideTime!),
                     ),
                     if (distanceKm != null) ...[
                       const Divider(height: 24),

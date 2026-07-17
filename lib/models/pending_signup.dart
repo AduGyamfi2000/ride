@@ -1,8 +1,14 @@
-import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 /// Everything collected on the signup form, carried through OTP
 /// verification so the user's profile can be created (with uploaded
 /// documents, for drivers) once the code checks out.
+///
+/// Uses image_picker's XFile rather than dart:io's File — File doesn't
+/// work on Flutter Web at all (there's no real filesystem path to a blob
+/// URL), whereas XFile works cross-platform via readAsBytes(). See
+/// lib/services/user_service.dart's uploadDriverDocument() for the other
+/// half of this fix.
 class PendingSignup {
   final String role; // Passenger or Driver
   final String firstName; // compulsory
@@ -19,8 +25,8 @@ class PendingSignup {
   final String? carModel;
   final String? carPlateNumber;
   final String? carColor;
-  final File? licenseImageFile;
-  final File? carImageFile;
+  final XFile? licenseImageFile;
+  final XFile? carImageFile;
 
   PendingSignup({
     required this.role,

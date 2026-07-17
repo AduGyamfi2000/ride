@@ -15,6 +15,9 @@ class Ride {
   final String status;
   final DateTime createdAt;
   final String? passengerName;
+  // Needed so a driver can call the passenger — previously only the
+  // driver's phone was ever stored on a ride, not the passenger's.
+  final String? passengerPhone;
   // Set once a driver accepts the ride.
   final String? driverPhone;
   final String? driverName;
@@ -36,6 +39,7 @@ class Ride {
     this.status = 'Searching',
     DateTime? createdAt,
     this.passengerName,
+    this.passengerPhone,
     this.driverPhone,
     this.driverName,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -57,6 +61,7 @@ class Ride {
         'status': status,
         'createdAtMillis': createdAt.millisecondsSinceEpoch,
         'passengerName': passengerName,
+        'passengerPhone': passengerPhone,
         'driverPhone': driverPhone,
         'driverName': driverName,
       };
@@ -80,6 +85,7 @@ class Ride {
             ? DateTime.fromMillisecondsSinceEpoch(json['createdAtMillis'] as int)
             : DateTime.now(),
         passengerName: json['passengerName'] as String?,
+        passengerPhone: json['passengerPhone'] as String?,
         driverPhone: json['driverPhone'] as String?,
         driverName: json['driverName'] as String?,
       );

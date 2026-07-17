@@ -27,6 +27,17 @@ class AuthGateScreen extends StatefulWidget {
 
 class _AuthGateScreenState extends State<AuthGateScreen> {
   late final Future<_StartupPrefs> _startupPrefs;
+  // IMPORTANT: this must be created once and reused, not called fresh
+  // inside build(). StreamBuilder treats a new Stream *instance* as a
+  // brand new stream to subscribe to — even though authStateChanges()
+  // logically represents "the same" ongoing auth state, calling it again
+  // returns a different Stream object each time. StreamBuilder then
+  // resets to ConnectionState.waiting (showing _LoadingScreen, or worse,
+  // a transient user == null before the new subscription's first event
+  // arrives) on every rebuild of this widget — which is exactly what
+  // "confirming a ride logs me out" looks like if any rebuild of this
+  // screen happens to coincide with Navigator popping back to it.
+  final Stream<User?> _authStateChanges = FirebaseAuth.instance.authStateChanges();
 
   @override
   void initState() {
@@ -57,7 +68,7 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
         }
 
         return StreamBuilder<User?>(
-          stream: FirebaseAuth.instance.authStateChanges(),
+          stream: _authStateChanges,
           builder: (context, authSnapshot) {
             if (authSnapshot.connectionState == ConnectionState.waiting) {
               return const _LoadingScreen();
