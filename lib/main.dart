@@ -19,17 +19,25 @@ Future<void> main() async {
   // Start background sync service
   syncService.start();
 
-  runApp(const MyApp());
+  // Load saved language/text-size/voice settings before the app renders
+  // anything — otherwise the first frame (and first TTS narration) would
+  // briefly use the defaults before flipping to whatever was saved.
+  final settingsProvider = SettingsProvider();
+  await settingsProvider.load();
+
+  runApp(MyApp(settingsProvider: settingsProvider));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final SettingsProvider settingsProvider;
+
+  const MyApp({super.key, required this.settingsProvider});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider.value(value: settingsProvider),
         ChangeNotifierProvider(create: (_) => RideProvider()),
       ],
       child: MaterialApp(

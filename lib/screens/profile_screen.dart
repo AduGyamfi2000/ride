@@ -125,17 +125,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _signOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('userPhone');
-    await prefs.remove('selectedRole');
-    await FirebaseAuth.instance.signOut();
-    // AuthGateScreen listens to auth state live, so it will show
-    // LoginScreen on its own once we pop back to it.
-    if (!mounted) return;
-    Navigator.of(context).popUntil((route) => route.isFirst);
-  }
-
   Future<void> _updateHasPassword(bool value) async {
     if (_profile == null) return;
     final updated = UserProfile(
@@ -452,8 +441,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 isLarge: false,
                 onPressed: _showSetPasswordDialog,
               ),
-            const SizedBox(height: 24),
-            AppButton(label: 'Sign Out', variant: AppButtonVariant.outlined, onPressed: _signOut),
           ],
         ),
       ),

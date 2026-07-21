@@ -116,6 +116,7 @@ class HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Smart Rural Ride'),
+          backgroundColor: AppColors.passengerColor,
         ),
         body: Column(
           children: [

@@ -17,6 +17,6 @@ class ApiKeys {
   // credit card. Replace both values below with your own after signing
   // up — see the setup steps in CHANGES.md under "Storage without
   // Firebase Storage".
-  static const String cloudinaryCloudName = 'YOUR_CLOUD_NAME';
-  static const String cloudinaryUploadPreset = 'YOUR_UNSIGNED_UPLOAD_PRESET';
+  static const String cloudinaryCloudName = 'j2hwvn0g';
+  static const String cloudinaryUploadPreset = 'tkiykz8d';
 }

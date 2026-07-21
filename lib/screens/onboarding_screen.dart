@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/settings_provider.dart';
 import '../services/voice_guide_service.dart';
-import '../auth/login_screen.dart';
+import 'role_selection_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_button.dart';
 
@@ -32,84 +32,89 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Future<void> _finishOnboarding(String role) async {
+  Future<void> _continue() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hasSeenOnboarding', true);
-    await prefs.setString('selectedRole', role);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
 
-    // Previously this jumped straight to HomeScreen/DriverHomeScreen with
-    // no authentication at all. Now the chosen role is carried into
-    // LoginScreen so the user actually verifies their phone number before
-    // reaching the app.
+    // Role choice (Passenger vs Driver) now lives on its own dedicated,
+    // color-coded page rather than being two buttons on this welcome
+    // screen.
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => LoginScreen(userRole: role),
-      ),
+      MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>().settings;
+    final isTwi = settings.language == 'Twi';
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 12),
-              // Taxi logo — reuses the existing vehicle artwork so the
-              // very first thing a user sees ties directly to what the
-              // app does, instead of a generic placeholder icon.
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Image.asset('assets/images/taxi.png', height: 90),
+              const Spacer(),
+              // Taxi avatar — a large, unmistakable circular badge (not
+              // just a plain image) so it reads clearly as the app's
+              // identity mark, the very first thing anyone sees.
+              Container(
+                width: 148,
+                height: 148,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  border: Border.all(color: AppColors.primary, width: 4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.35),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
                 ),
+                padding: const EdgeInsets.all(22),
+                child: Image.asset('assets/images/taxi.png', fit: BoxFit.contain),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 28),
               Text(
-                settings.language == 'Twi' ? 'Akwaaba' : 'Welcome to Smart Rural Ride',
+                isTwi ? 'Akwaaba' : 'Welcome',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.secondary,
+                style: AppTextStyles.displayLarge.copyWith(color: AppColors.secondary),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                isTwi ? 'Smart Rural Ride' : 'to Smart Rural Ride',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
                     ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Text(
-                settings.language == 'Twi'
+                isTwi
                     ? 'Yɛ boa wo ma woatumi ahwe kwan no yie wɔ akuraase.'
                     : 'Book a ride in your community, in a few simple taps.',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium,
+                style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary),
               ),
-              const SizedBox(height: 24),
-              _featureTile(Icons.touch_app, 'Large touch targets', 'Easy to tap even with limited reading experience.'),
-              _featureTile(Icons.volume_up, 'Voice guidance', 'Every page tells you what it does and how to use it.'),
-              _featureTile(Icons.location_on, 'Simple ride booking', 'Select vehicle, place, and time in a few taps.'),
+              const SizedBox(height: 28),
+              _featureRow(Icons.touch_app, isTwi ? 'Kɔtɔ a ɛyɛ mmerɛw' : 'Large, easy-to-tap buttons'),
+              const SizedBox(height: 10),
+              _featureRow(Icons.volume_up, isTwi ? 'Nne kwankyerɛ' : 'Every page explains itself by voice'),
+              const SizedBox(height: 10),
+              _featureRow(Icons.location_on, isTwi ? 'Kwan a ɛyɛ mmerɛw' : 'Simple ride booking in a few taps'),
               const Spacer(),
               AppButton(
-                label: settings.language == 'Twi' ? 'Hyɛ Aseɛ' : 'Get Started',
+                label: isTwi ? 'Hyɛ Aseɛ' : 'Get Started',
                 icon: Icons.arrow_forward,
-                onPressed: () => _finishOnboarding('Passenger'),
+                onPressed: _continue,
               ),
-              const SizedBox(height: 12),
-              AppButton(
-                label: settings.language == 'Twi' ? 'Mɛyɛ Driver' : 'I am a Driver',
-                icon: Icons.drive_eta,
-                variant: AppButtonVariant.outlined,
-                onPressed: () => _finishOnboarding('Driver'),
-              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -117,19 +122,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _featureTile(IconData icon, String title, String description) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Card(
-        child: ListTile(
-          leading: CircleAvatar(
-            backgroundColor: AppColors.secondaryLight.withValues(alpha: 0.2),
-            child: Icon(icon, color: AppColors.secondary),
+  Widget _featureRow(IconData icon, String label) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.secondaryLight.withValues(alpha: 0.15),
+            shape: BoxShape.circle,
           ),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(description),
+          child: Icon(icon, color: AppColors.secondary, size: 18),
         ),
-      ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(label, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary)),
+        ),
+      ],
     );
   }
 }

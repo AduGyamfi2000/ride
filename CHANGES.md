@@ -746,6 +746,165 @@ document — there was no way for a driver to call the passenger, and no
 - Both reuse the same `tel:` URI approach already built for the SOS button
   (`url_launcher`, already a dependency — no new package needed).
 
+## Onboarding redesign, restored Cloudinary keys, better signup diagnostics
+
+- **Onboarding rewritten** with a genuinely distinct visual identity: a
+  large circular taxi avatar (white badge, gold ring, soft shadow — not
+  just a plain inline image), "Welcome / to Smart Rural Ride" as two
+  weighted lines, and "Get Started" / "I am a Driver" as before.
+- **`lib/core/api_keys.dart` had reverted to placeholder Cloudinary values**
+  (`YOUR_CLOUD_NAME` / `YOUR_UNSIGNED_UPLOAD_PRESET`) in this working copy,
+  restored to the real ones. If driver signup was failing after entering
+  the OTP, this was very likely why — every license/car photo upload would
+  have failed against a cloud name that doesn't exist. **If you're
+  maintaining your own copy of this file separately from what I hand you,
+  double check it has your real values, not placeholders.**
+- `lib/screens/otp_screen.dart` — signup's error handling was one generic
+  catch-all ("Something went wrong finishing sign-in: $e") for three very
+  different possible failures (license photo upload, car photo upload,
+  profile save). Each now throws its own specific, readable message, and
+  the raw error is also logged to console (`log(...)`) for real debugging.
+  **If driver signup fails again, the on-screen message should now say
+  exactly which step failed** — paste it here and it'll be immediate to
+  diagnose rather than guesswork.
+
+### On "Passenger still gets logged out after confirming a ride"
+
+I re-checked `lib/screens/auth_gate_screen.dart` and the fix from before
+(hoisting the `authStateChanges()` stream to a field instead of recreating
+it on every build) is still in place and correct — I couldn't find a
+different cause on this pass. Given a couple of things reported as fixed
+have come back (this, and onboarding not showing the taxi logo that was
+already added), it's worth double-checking whether the environment you're
+testing has actually picked up the latest files — particularly
+`auth_gate_screen.dart` and `onboarding_screen.dart`. If it has and this is
+still happening, the next most useful thing would be the exact moment it
+happens (does it flash back to the Login screen, or the onboarding screen,
+right after tapping Confirm — or only later?) so I can chase a different
+cause.
+
+## Diagnostic logging for the two still-unresolved bugs
+
+Confirmed you're always testing my latest zip (with your own real
+Cloudinary keys layered in) — so the Cloudinary-placeholder theory doesn't
+explain the driver signup failure, and the auth-stream fix genuinely
+hasn't fully resolved the logout-on-confirm issue. Rather than keep
+guessing, added logging so the *next* occurrence of either is traceable
+from the browser console (F12 → Console) instead of another blind attempt:
+
+- `lib/screens/auth_gate_screen.dart` — a second listener on the (still
+  correctly hoisted) auth stream logs every transition:
+  `[AuthGateScreen] auth state changed: <uid or SIGNED OUT> at <time>`.
+- `lib/screens/confirm_ride_screen.dart` — logs the current user's uid
+  right before navigating back after a successful booking (both the
+  online and offline paths), so it's possible to see whether the session
+  was already gone *before* that navigation happens, or only after.
+- `lib/screens/otp_screen.dart` — the signup path now logs each step as it
+  happens (`[OTP submit] ...`): anonymous sign-in, license photo upload,
+  car photo upload, profile save. If it fails, the last `[OTP submit]`
+  line printed tells you exactly which step it got stuck on, even before
+  reading the error message itself.
+
+**Next step:** reproduce each bug once with the browser console open, and
+paste the relevant `[AuthGateScreen]` / `[ConfirmRide]` / `[OTP submit]`
+lines (plus whatever error follows) here — that trail should make both of
+these conclusively diagnosable instead of another round of guessing.
+
+## Role color-coding system, dedicated role-selection page, and Sign Out moved to Settings
+
+A fairly large restructuring of the start-of-app flow, built around one
+consistent idea: **gold = Passenger, green = Driver**, used the same way
+on every screen that involves a role, so the color itself becomes a
+learnable cue independent of reading the text.
+
+- `lib/theme/app_theme.dart` — added `AppColors.passengerColor` (alias for
+  `primary`/gold) and `AppColors.driverColor` (alias for `secondary`/
+  green) as the one source of truth for this mapping.
+- `lib/screens/onboarding_screen.dart` — simplified back to pure welcome
+  content (taxi avatar, welcome message, one "Get Started" button). Role
+  choice no longer happens here.
+- `lib/screens/role_selection_screen.dart` (**new**) — the page after
+  onboarding now asks "Are you a...", with two large color-coded cards
+  (gold Passenger / green Driver). Voice narration explains the colors on
+  load. Tapping one goes straight to that role's signup — not to Login —
+  per your request.
+- `lib/auth/signup_screen.dart` — the role toggle is now framed as color-
+  coded tabs (gold/green, matching role selection exactly), the AppBar
+  itself recolors to match whichever role is active, and there's now a
+  colored banner below the form ("Meant to sign up as a Driver instead?
+  Tap here.") in the *other* role's color, which switches the active tab
+  when tapped. Both the tab switch and the page load are voice-narrated.
+- `lib/screens/driver_home_screen.dart` — AppBar recolored to green
+  (driver color), and the "Accept" button now uses the green button
+  variant, so the whole driver experience reads consistently green.
+- `lib/screens/home_screen.dart` — AppBar color made explicit as gold
+  (`AppColors.passengerColor`) rather than implicitly matching the default
+  theme, so it's clearly intentional rather than coincidental.
+- **Sign Out moved from Profile to Settings.** `profile_screen.dart` no
+  longer has a Sign Out button; `setting_screen.dart` now does, below a
+  divider at the bottom of the page.
+
+### A note on returning users
+
+Because RoleSelectionScreen now goes straight to Signup rather than Login,
+a **returning** user reaching this flow (e.g. reinstalled the app) lands on
+Signup first and needs to tap "Already have an account? Login" at the
+bottom to get to the login flow instead. This matches exactly what was
+asked for, but is worth knowing about if it feels like an extra tap for
+returning users during testing/demoing.
+
+## Signup tabs removed, language selection added, settings now actually persist
+
+### Signup screen simplified
+Removed the tab bar from `signup_screen.dart` — the colored "switch to the
+other role" banner below the form (already built) is now the *only* way
+to switch roles, instead of two redundant mechanisms. A small colored bar
+at the top still shows which role the form is currently for, without
+being an interactive tab control.
+
+### Language selection, before onboarding
+- `lib/screens/language_selection_screen.dart` (**new**) — the very first
+  screen on a truly fresh install, before onboarding. Picking a language
+  speaks a short confirmation in that language, then continues to
+  onboarding — meaning onboarding's own narration, and everything after
+  it, can now actually be voiced in the chosen language from the start,
+  instead of always beginning in English regardless of what gets picked
+  later in Settings.
+- `lib/screens/auth_gate_screen.dart` — gates on a new `hasSelectedLanguage`
+  flag before the existing `hasSeenOnboarding` check.
+
+### Found and fixed: settings were never actually saved
+While wiring this up, found that `SettingsProvider` (language, text size,
+voice toggle) never persisted anywhere — every setting silently reset to
+`SettingsModel`'s hardcoded defaults (English, 16.0, voice on) on every
+fresh app launch. This meant a language chosen once wouldn't have stuck
+around anyway. `SettingsProvider` now loads from and saves to
+`SharedPreferences`; `main.dart` loads it once before `runApp` so the
+correct language/settings are ready before the first frame renders.
+
+### Test updated
+`test/widget_test.dart` now covers both the true first-launch case
+(language selection) and the "language already chosen" case (onboarding),
+since the very-first-screen changed.
+
+## Car make/model as dependent dropdowns, with a free-text fallback
+
+`lib/core/car_data.dart` (**new**) — a curated reference list of car makes
+and their common models, weighted toward vehicles seen in Ghana (Toyota,
+Hyundai, Kia, Nissan, Honda, Mercedes-Benz, and 12 more, ~17 makes total).
+Not exhaustive by design — every make's model list, and the make list
+itself, ends with an "Other (type your own)" option, so a driver whose
+car genuinely isn't covered can still type it in freely rather than being
+blocked.
+
+`lib/auth/signup_screen.dart` — Car Make and Car Model are now dependent
+dropdowns: picking a make populates the model dropdown with only that
+make's models (plus Other); the model dropdown is disabled with a "Choose
+a make first" hint until a make is picked, and resets if the make changes
+(a previously-picked model may not apply to a new make). Picking "Other"
+on either one reveals a free-text field right below it for typing the
+actual value, which is what actually gets saved.
+
 ## Known limitations still worth addressing later
 
 - The admin phone number is still a hardcoded string in `login_screen.dart`,

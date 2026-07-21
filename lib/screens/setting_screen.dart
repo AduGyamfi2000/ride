@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/settings_provider.dart';
 import '../services/voice_guide_service.dart';
+import '../theme/app_theme.dart';
 import 'profile_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -42,6 +45,17 @@ class SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Settings saved successfully!')),
     );
+  }
+
+  Future<void> _signOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('userPhone');
+    await prefs.remove('selectedRole');
+    await FirebaseAuth.instance.signOut();
+    // AuthGateScreen listens to auth state live, so it will show
+    // LoginScreen on its own once we pop back to it.
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override
@@ -112,6 +126,15 @@ class SettingsScreenState extends State<SettingsScreen> {
               },
               icon: const Icon(Icons.person),
               label: const Text('Edit Profile'),
+            ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _signOut,
+              style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+              icon: const Icon(Icons.logout),
+              label: const Text('Sign Out'),
             ),
           ],
         ),

@@ -41,11 +41,21 @@ class VoiceGuideService {
   // safer than a wrong machine-translated guess. A native speaker should
   // fill these in over time.
   static final Map<String, Map<String, String>> pageDescriptions = {
+    'language_selected': {
+      'English': 'Language selected.',
+      'Twi': 'Wɔayi Twi.',
+    },
     'onboarding': {
       'English':
-          'Welcome to Smart Rural Ride. This is the welcome screen. Tap Get Started to continue as a passenger, or tap "I am a driver" if you drive.',
+          'Welcome to Smart Rural Ride. Tap Get Started to continue.',
       'Twi':
-          'Meda wo akwaaba wɔ Smart Rural Ride. Fa wo nsa ka Get Started sɛ obi a ɔretaxi, anaa "I am a driver" sɛ wo yɛ driver.',
+          'Meda wo akwaaba wɔ Smart Rural Ride. Fa wo nsa ka Get Started na yɛ toa so.',
+    },
+    'role_selection': {
+      'English':
+          'Are you a passenger or a driver? Tap the gold button for Passenger, if you want to book rides. Tap the green button for Driver, if you want to give rides. You will see these same colors again on the next pages.',
+      'Twi':
+          'Woyɛ Passenger anaa Driver? Fa wo nsa ka sikakɔkɔɔ button no sɛ Passenger, anaasɛ ahaban button no sɛ Driver.',
     },
     'login': {
       'English':
@@ -53,7 +63,13 @@ class VoiceGuideService {
     },
     'signup': {
       'English':
-          'This is the sign up page. Choose Passenger or Driver at the top. Fill in your phone number and first name — these are required. Other fields are optional. Drivers must also add license, car details, and photos.',
+          'This is the sign up page. The colored bar at the top shows which role you are signing up for. Fill in your phone number and first name — these are required. Other fields are optional. Drivers must also add license, car details, and photos. If you meant to sign up as the other role, there is a colored button below the form — tap it to switch.',
+    },
+    'signup_passenger_selected': {
+      'English': 'Passenger selected. This tab is gold.',
+    },
+    'signup_driver_selected': {
+      'English': 'Driver selected. This tab is green. You will need to add your license, car details, and photos.',
     },
     'otp': {
       'English':

@@ -18,6 +18,14 @@ class AppColors {
   // Accent — terracotta red
   static const Color accent = Color(0xFFD94F2E);
 
+  // Role color-coding, used consistently from role selection through
+  // signup and each role's home screen, so the same color always means
+  // the same role throughout the app ("gold = Passenger, green = Driver").
+  // These are just named aliases for primary/secondary — kept as their
+  // own names so the intent reads clearly at every call site.
+  static const Color passengerColor = primary;
+  static const Color driverColor = secondary;
+
   // Neutrals
   static const Color background = Color(0xFFF5F1EB);
   static const Color surface = Color(0xFFFFFFFF);

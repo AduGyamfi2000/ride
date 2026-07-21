@@ -294,7 +294,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     return GestureDetector(
       onTap: _stopSpeaking,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Driver Home')),
+        appBar: AppBar(
+          title: const Text('Driver Home'),
+          backgroundColor: AppColors.driverColor,
+        ),
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -419,6 +422,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                                 trailing: AppButton(
                                   label: 'Accept',
                                   isLarge: false,
+                                  variant: AppButtonVariant.secondary,
                                   onPressed: () => _acceptRide(d.id),
                                 ),
                               )),

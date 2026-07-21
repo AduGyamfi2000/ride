@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import '../core/car_data.dart';
 import '../models/pending_signup.dart';
 import '../providers/settings_provider.dart';
 import '../screens/otp_screen.dart';
@@ -28,10 +29,15 @@ class _SignupScreenState extends State<SignupScreen> {
 
   // Driver-only controllers.
   final TextEditingController _licenseController = TextEditingController();
-  final TextEditingController _carMakeController = TextEditingController();
-  final TextEditingController _carModelController = TextEditingController();
+  final TextEditingController _carMakeOtherController = TextEditingController();
+  final TextEditingController _carModelOtherController = TextEditingController();
   final TextEditingController _plateController = TextEditingController();
   final TextEditingController _carColorController = TextEditingController();
+
+  // Car make/model are dropdowns fed by CarData, with 'Other' falling
+  // through to the free-text controllers above for whatever isn't listed.
+  String? _selectedMake;
+  String? _selectedModel;
 
   String _selectedRole = 'Passenger';
   XFile? _licenseImage;
@@ -61,8 +67,8 @@ class _SignupScreenState extends State<SignupScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _licenseController.dispose();
-    _carMakeController.dispose();
-    _carModelController.dispose();
+    _carMakeOtherController.dispose();
+    _carModelOtherController.dispose();
     _plateController.dispose();
     _carColorController.dispose();
     super.dispose();
@@ -82,6 +88,42 @@ class _SignupScreenState extends State<SignupScreen> {
 
   bool get _isDriver => _selectedRole == 'Driver';
 
+  // Resolves the dropdown selection down to the actual value to save —
+  // the free-text field when 'Other' was picked, otherwise the picked
+  // make/model itself.
+  String get _resolvedMake =>
+      _selectedMake == CarData.otherOption ? _carMakeOtherController.text.trim() : (_selectedMake ?? '');
+  String get _resolvedModel =>
+      _selectedModel == CarData.otherOption ? _carModelOtherController.text.trim() : (_selectedModel ?? '');
+
+  void _onMakeChanged(String? make) {
+    setState(() {
+      _selectedMake = make;
+      // A model chosen for the previous make may not apply to the new
+      // one, so it resets rather than silently keeping a mismatched pick.
+      _selectedModel = null;
+      _carModelOtherController.clear();
+    });
+  }
+
+  // The color for whichever role is currently active — used on the tab
+  // indicator and the AppBar, so the whole page visibly reflects "you are
+  // signing up as X" using the same color introduced on RoleSelectionScreen.
+  Color get _activeColor => _isDriver ? AppColors.driverColor : AppColors.passengerColor;
+
+  void _switchRole(String role) {
+    setState(() {
+      _selectedRole = role;
+      _errorMessage = null;
+    });
+    final settings = context.read<SettingsProvider>().settings;
+    VoiceGuideService().describePage(
+      pageKey: role == 'Driver' ? 'signup_driver_selected' : 'signup_passenger_selected',
+      language: settings.language,
+      voiceEnabled: settings.voiceEnabled,
+    );
+  }
+
   void _submit() {
     final phone = _phoneController.text.trim();
     final firstName = _firstNameController.text.trim();
@@ -97,8 +139,8 @@ class _SignupScreenState extends State<SignupScreen> {
 
     if (_isDriver) {
       if (_licenseController.text.trim().isEmpty ||
-          _carMakeController.text.trim().isEmpty ||
-          _carModelController.text.trim().isEmpty ||
+          _resolvedMake.isEmpty ||
+          _resolvedModel.isEmpty ||
           _plateController.text.trim().isEmpty) {
         setState(() => _errorMessage = 'Please fill in all driver and car details.');
         return;
@@ -132,8 +174,8 @@ class _SignupScreenState extends State<SignupScreen> {
       email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
       password: password.isNotEmpty ? password : null,
       licenseNumber: _isDriver ? _licenseController.text.trim() : null,
-      carMake: _isDriver ? _carMakeController.text.trim() : null,
-      carModel: _isDriver ? _carModelController.text.trim() : null,
+      carMake: _isDriver ? _resolvedMake : null,
+      carModel: _isDriver ? _resolvedModel : null,
       carPlateNumber: _isDriver ? _plateController.text.trim() : null,
       carColor: _isDriver && _carColorController.text.trim().isNotEmpty ? _carColorController.text.trim() : null,
       licenseImageFile: _licenseImage,
@@ -154,8 +196,14 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final otherRole = _isDriver ? 'Passenger' : 'Driver';
+    final otherRoleColor = _isDriver ? AppColors.passengerColor : AppColors.driverColor;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Sign Up')),
+      appBar: AppBar(
+        title: const Text('Sign Up'),
+        backgroundColor: _activeColor,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -163,25 +211,25 @@ class _SignupScreenState extends State<SignupScreen> {
           children: [
             const Text('Create your account', style: AppTextStyles.displayLarge),
             const SizedBox(height: 16),
-            // Role toggle
-            Row(
-              children: [
-                Expanded(
-                  child: _RoleChip(
-                    label: 'Passenger',
-                    selected: !_isDriver,
-                    onTap: () => setState(() => _selectedRole = 'Passenger'),
+            // Shows which role this form is currently for — the actual
+            // way to switch roles is the colored tap-to-switch banner
+            // further down, not a tab bar.
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: _activeColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(_isDriver ? Icons.drive_eta : Icons.emoji_people, color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    _isDriver ? 'Signing up as a Driver' : 'Signing up as a Passenger',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _RoleChip(
-                    label: 'Driver',
-                    selected: _isDriver,
-                    onTap: () => setState(() => _selectedRole = 'Driver'),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 24),
             CustomTextField(
@@ -252,19 +300,42 @@ class _SignupScreenState extends State<SignupScreen> {
                 prefixIcon: Icons.badge_outlined,
               ),
               const SizedBox(height: 16),
-              CustomTextField(
-                controller: _carMakeController,
+              _CarDropdown(
                 label: 'Car Make *',
-                hint: 'e.g. Toyota',
-                prefixIcon: Icons.directions_car,
+                icon: Icons.directions_car,
+                value: _selectedMake,
+                options: CarData.makes,
+                onChanged: _onMakeChanged,
               ),
+              if (_selectedMake == CarData.otherOption) ...[
+                const SizedBox(height: 12),
+                CustomTextField(
+                  controller: _carMakeOtherController,
+                  label: 'Car Make (type your own) *',
+                  hint: 'e.g. Tata',
+                  prefixIcon: Icons.edit_outlined,
+                ),
+              ],
               const SizedBox(height: 16),
-              CustomTextField(
-                controller: _carModelController,
+              _CarDropdown(
                 label: 'Car Model *',
-                hint: 'e.g. Corolla',
-                prefixIcon: Icons.directions_car_outlined,
+                icon: Icons.directions_car_outlined,
+                // Disabled until a make is picked — a model list without
+                // a make selected doesn't mean anything.
+                value: _selectedModel,
+                options: _selectedMake == null ? [] : CarData.modelsFor(_selectedMake),
+                onChanged: _selectedMake == null ? null : (value) => setState(() => _selectedModel = value),
+                enabled: _selectedMake != null,
               ),
+              if (_selectedModel == CarData.otherOption) ...[
+                const SizedBox(height: 12),
+                CustomTextField(
+                  controller: _carModelOtherController,
+                  label: 'Car Model (type your own) *',
+                  hint: 'e.g. Indica',
+                  prefixIcon: Icons.edit_outlined,
+                ),
+              ],
               const SizedBox(height: 16),
               CustomTextField(
                 controller: _plateController,
@@ -297,7 +368,43 @@ class _SignupScreenState extends State<SignupScreen> {
               Text(_errorMessage!, style: const TextStyle(color: AppColors.error)),
             ],
             const SizedBox(height: 24),
-            AppButton(label: 'Send OTP', icon: Icons.arrow_forward, onPressed: _submit),
+            AppButton(
+              label: 'Send OTP',
+              icon: Icons.arrow_forward,
+              onPressed: _submit,
+              variant: _isDriver ? AppButtonVariant.secondary : AppButtonVariant.primary,
+            ),
+            const SizedBox(height: 16),
+            // Colored prompt to switch to the other role's signup — same
+            // color that role uses everywhere else, reinforcing "wrong
+            // tab? here's the right color to look for."
+            GestureDetector(
+              onTap: () => _switchRole(otherRole),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: otherRoleColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: otherRoleColor.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      otherRole == 'Driver' ? Icons.drive_eta : Icons.emoji_people,
+                      color: otherRoleColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Meant to sign up as a $otherRole instead? Tap here.',
+                        style: TextStyle(color: otherRoleColor, fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 10),
             Center(
               child: TextButton(
@@ -312,32 +419,45 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 }
 
-class _RoleChip extends StatelessWidget {
+class _CarDropdown extends StatelessWidget {
   final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final IconData icon;
+  final String? value;
+  final List<String> options;
+  final ValueChanged<String?>? onChanged;
+  final bool enabled;
 
-  const _RoleChip({required this.label, required this.selected, required this.onTap});
+  const _CarDropdown({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.enabled = true,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : AppColors.surfaceVariant,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Text(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
           label,
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : AppColors.textSecondary,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          initialValue: options.contains(value) ? value : null,
+          items: options
+              .map((option) => DropdownMenuItem(value: option, child: Text(option, overflow: TextOverflow.ellipsis)))
+              .toList(),
+          onChanged: enabled ? onChanged : null,
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon, color: enabled ? AppColors.primary : AppColors.textHint, size: 22),
+            hintText: enabled ? 'Select' : 'Choose a make first',
           ),
         ),
-      ),
+      ],
     );
   }
 }

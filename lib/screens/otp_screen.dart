@@ -2,7 +2,6 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:ride/auth/signup_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/otp_generator.dart';
 import '../auth/synthetic_email.dart';
@@ -16,6 +15,7 @@ import '../widgets/app_button.dart';
 import 'driver_home_screen.dart';
 import 'home_screen.dart';
 import 'admin_screen.dart';
+import '../auth/signup_screen.dart';
 
 class PhoneOTPVerification extends StatefulWidget {
   final String phoneNumber;
@@ -128,32 +128,48 @@ class _PhoneOTPVerificationState extends State<PhoneOTPVerification> {
       // Firestore's security rules (which require request.auth != null)
       // let us read/write. See otp_generator.dart for why this is
       // anonymous auth rather than real phone auth.
+      log('[OTP submit] verifying OTP succeeded, signing in anonymously...');
       await FirebaseAuth.instance.signInAnonymously();
+      log('[OTP submit] signed in anonymously as ${FirebaseAuth.instance.currentUser?.uid}');
 
       UserProfile profile;
       final pending = widget.pendingSignup;
 
       if (pending != null) {
+        log('[OTP submit] signup path, role=${pending.role}');
         // Signup: upload driver documents (if any) and create the profile.
         String? licenseUrl;
         String? carUrl;
         if (pending.role == 'Driver') {
           if (pending.licenseImageFile != null) {
-            licenseUrl = await UserService.uploadDriverDocument(
-              phone: widget.phoneNumber,
-              file: pending.licenseImageFile!,
-              label: 'license',
-            );
+            try {
+              log('[OTP submit] uploading license photo...');
+              licenseUrl = await UserService.uploadDriverDocument(
+                phone: widget.phoneNumber,
+                file: pending.licenseImageFile!,
+                label: 'license',
+              );
+              log('[OTP submit] license photo uploaded: $licenseUrl');
+            } catch (e) {
+              throw Exception('Could not upload your license photo — $e');
+            }
           }
           if (pending.carImageFile != null) {
-            carUrl = await UserService.uploadDriverDocument(
-              phone: widget.phoneNumber,
-              file: pending.carImageFile!,
-              label: 'car',
-            );
+            try {
+              log('[OTP submit] uploading car photo...');
+              carUrl = await UserService.uploadDriverDocument(
+                phone: widget.phoneNumber,
+                file: pending.carImageFile!,
+                label: 'car',
+              );
+              log('[OTP submit] car photo uploaded: $carUrl');
+            } catch (e) {
+              throw Exception('Could not upload your car photo — $e');
+            }
           }
         }
 
+        log('[OTP submit] uploads done, building profile and setting password if any...');
         profile = UserProfile(
           phone: widget.phoneNumber,
           firstName: pending.firstName,
@@ -170,7 +186,13 @@ class _PhoneOTPVerificationState extends State<PhoneOTPVerification> {
           verificationStatus: pending.role == 'Driver' ? 'Pending' : 'Verified',
           hasPassword: await _maybeSetPassword(pending.password),
         );
-        await UserService.createOrUpdateUser(profile);
+        try {
+          log('[OTP submit] saving profile to Firestore...');
+          await UserService.createOrUpdateUser(profile);
+          log('[OTP submit] profile saved successfully.');
+        } catch (e) {
+          throw Exception('Could not save your profile — $e');
+        }
       } else {
         // Login: the profile should already exist for this phone number.
         final existing = await UserService.fetchByPhone(widget.phoneNumber);
@@ -214,6 +236,7 @@ class _PhoneOTPVerificationState extends State<PhoneOTPVerification> {
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
       }
     } catch (e) {
+      log('Signup/login failed: $e');
       if (!mounted) return;
       setState(() {
         _errorMessage = 'Something went wrong finishing sign-in: $e';

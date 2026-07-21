@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,6 +6,7 @@ import '../auth/login_screen.dart';
 import 'admin_screen.dart';
 import 'driver_home_screen.dart';
 import 'home_screen.dart';
+import 'language_selection_screen.dart';
 import 'onboarding_screen.dart';
 
 /// Decides the first real screen a user should land on:
@@ -43,11 +45,23 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
   void initState() {
     super.initState();
     _startupPrefs = _loadStartupPrefs();
+    // Diagnostic only — Firebase's authStateChanges() is a broadcast
+    // stream, so this is a second independent listener alongside the
+    // StreamBuilder's own subscription below, purely to get a timestamped
+    // trail in the console. If "logged out" happens again, check the
+    // browser console (F12) right when it occurs — this will show exactly
+    // when the auth state actually changed (or didn't), which narrows
+    // down whether this is a real sign-out, a UI-only glitch, or
+    // something else entirely.
+    _authStateChanges.listen((user) {
+      log('[AuthGateScreen] auth state changed: ${user?.uid ?? "SIGNED OUT (null)"} at ${DateTime.now()}');
+    });
   }
 
   Future<_StartupPrefs> _loadStartupPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     return _StartupPrefs(
+      hasSelectedLanguage: prefs.getBool('hasSelectedLanguage') ?? false,
       hasSeenOnboarding: prefs.getBool('hasSeenOnboarding') ?? false,
       selectedRole: prefs.getString('selectedRole'),
     );
@@ -63,6 +77,9 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
         }
 
         final startupPrefs = prefsSnapshot.data!;
+        if (!startupPrefs.hasSelectedLanguage) {
+          return const LanguageSelectionScreen();
+        }
         if (!startupPrefs.hasSeenOnboarding) {
           return const OnboardingScreen();
         }
@@ -106,8 +123,9 @@ class _LoadingScreen extends StatelessWidget {
 }
 
 class _StartupPrefs {
+  final bool hasSelectedLanguage;
   final bool hasSeenOnboarding;
   final String? selectedRole;
 
-  _StartupPrefs({required this.hasSeenOnboarding, this.selectedRole});
+  _StartupPrefs({required this.hasSelectedLanguage, required this.hasSeenOnboarding, this.selectedRole});
 }

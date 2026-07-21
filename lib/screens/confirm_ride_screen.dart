@@ -186,6 +186,7 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
           content: Text("You're offline — the ride is saved and will sync automatically once you're back online."),
         ),
       );
+      log('[ConfirmRide] booked offline, currentUser before navigating back: ${FirebaseAuth.instance.currentUser?.uid ?? "NULL"}');
       Navigator.popUntil(context, (route) => route.isFirst);
       return;
     }
@@ -221,6 +222,7 @@ class ConfirmRideScreenState extends State<ConfirmRideScreen> {
         const SnackBar(content: Text('Ride has been scheduled and saved.')),
       );
 
+      log('[ConfirmRide] booked online, currentUser before navigating back: ${FirebaseAuth.instance.currentUser?.uid ?? "NULL"}');
       Navigator.popUntil(context, (route) => route.isFirst);
     } catch (e) {
       // Log the real error to the console so it's actually diagnosable —
